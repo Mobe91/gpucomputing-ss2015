@@ -1,2 +1,2 @@
-# gpucomputing-ws2015
+# gpucomputing-ss2015
 Object classifiction using self-organizing maps
