@@ -26,7 +26,7 @@ class CIFARImageLoader
 {
 private:
 	ifstream *file;
-	int size;
+	ifstream::pos_type size;
 
 	const int IMG_WIDTH = 32;
 	const int IMG_HEIGHT = 32;

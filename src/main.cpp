@@ -4,7 +4,9 @@
 #include <opencv/cv.h>
 #include <opencv/highgui.h>
 #include <iostream>
-#include <opencv2/features2d/features2d.hpp>
+#include <opencv2/features2d.hpp>
+//#include <opencv2/cudafeatures2d.hpp>
+#include <VLADEncoder.h>
 
 
 using namespace cv;
@@ -15,7 +17,7 @@ vector<vector<Mat>> som;
 void initSOM(int w, int h, int feature_cnt, int desc_length);
 void learnSOM(Mat descriptor);
 
-
+#define VLAD_CENTERS 5
 
 int main(int argc, char** argv)
 {
@@ -55,6 +57,7 @@ int main(int argc, char** argv)
 		
 		src.copyTo(img_box);
 		
+		VLADEncoder vladEncoder = VLADEncoder();
 		for (int i = 0; i < contours_poly.size(); i++){
 			double area = contourArea(contours_poly[i]);
 			if (area > 5000 && area < 700000){			// remove very small objects, and the very big ones (background)
@@ -65,7 +68,8 @@ int main(int argc, char** argv)
 
 				vector<KeyPoint> features;
 				Mat descriptors;
-				cv::Ptr<FeatureDetector> detector = ORB::create();
+				cv::Ptr<FeatureDetector> detector = cv::ORB::create();
+				//cv::Ptr<FeatureDetector> detector = cv::cuda::ORB::create();
 
 				//create mask  
 				Mat mask = Mat::zeros(src.size(), CV_8U);
@@ -74,11 +78,23 @@ int main(int argc, char** argv)
 				detector->detect(src, features, mask);				//find features
 				detector->compute(src, features, descriptors);		//create feature description
 				drawKeypoints(img_feature, features, img_feature, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
-				//cout << "w " << descriptors.cols << "   h " << descriptors.rows << endl;
 
-				//TODO limit the number of features
+				if (descriptors.rows > 0)
+				{
+					// allocate space for vlad encoding
+					float* vlad = new float[descriptors.cols * VLAD_CENTERS];
+					vladEncoder.encode(vlad, descriptors, VLAD_CENTERS);
+					for (int i = 0; i < VLAD_CENTERS; i++)
+					{
+						for (int j = 0; j < descriptors.cols; j++){
+							cout << vlad[i * descriptors.cols + j] << ",";	
+						}
+						cout << endl;
+					}
+					cout << "-----" << endl;
+					delete[] vlad;
+				}
 				//TODO call learn here
-
 			}
 		}
 		
