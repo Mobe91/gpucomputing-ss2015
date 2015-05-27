@@ -18,6 +18,7 @@ void initSOM(int w, int h, int feature_cnt, int desc_length);
 void learnSOM(Mat descriptor);
 
 #define VLAD_CENTERS 5
+#define ORB_DESCRIPTOR_DIMENSION 32
 
 int main(int argc, char** argv)
 {
@@ -57,7 +58,7 @@ int main(int argc, char** argv)
 		
 		src.copyTo(img_box);
 		
-		VLADEncoder vladEncoder = VLADEncoder();
+		VLADEncoder vladEncoder = VLADEncoder(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
 		for (int i = 0; i < contours_poly.size(); i++){
 			double area = contourArea(contours_poly[i]);
 			if (area > 5000 && area < 700000){			// remove very small objects, and the very big ones (background)
@@ -81,9 +82,10 @@ int main(int argc, char** argv)
 
 				if (descriptors.rows > 0)
 				{
+					assert(descriptors.cols == ORB_DESCRIPTOR_DIMENSION);
 					// allocate space for vlad encoding
 					float* vlad = new float[descriptors.cols * VLAD_CENTERS];
-					vladEncoder.encode(vlad, descriptors, VLAD_CENTERS);
+					vladEncoder.encode(vlad, descriptors);
 					for (int i = 0; i < VLAD_CENTERS; i++)
 					{
 						for (int j = 0; j < descriptors.cols; j++){
