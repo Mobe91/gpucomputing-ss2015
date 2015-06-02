@@ -45,6 +45,40 @@ void SOM::learnSOM(Mat descriptor){
 	//update neighborhood
 	neighborhoodRadius = mapRadius * exp( -(double) currentIterarion / timeConst );
 
+	//While the updating neigborhood neurons, reduced the searching space. Not search all the network, just search the BMU centered square. (Maybe there is more optimized way???)
+	/*
+	int minX = (int) max(0, (best.x - neighborhoodRadius));
+	int maxX=0;
+	if((best.x + neighborhoodRadius) > dimensionX){
+		maxX = dimensionX;
+	}else{
+		maxX = (int) (best.x + neighborhoodRadius);
+	}
+
+	int minY = (int) max(0, (best.y - neighborhoodRadius));
+	int maxY=0;
+	if((best.y + neighborhoodRadius) > dimensionY){
+		maxY = dimensionY;
+	}else{
+		maxY = (int) (best.y + neighborhoodRadius);
+	}
+		
+	for(int i = minX; i < maxX; i++){									//replace minX, maxX
+		for(int j = minY; j < maxY; j++){								//replace minY, maxY
+			manhattanDist = abs(best.x - i) + abs(best.y - j);
+			if(manhattanDist <= neighborhoodRadius){
+				currentLearningRate = initialLearningRate * exp(-(double)currentIterarion/maxIterationNum); // current learing rate is decreasing with iterations.
+				learningDist = exp( (-1 * pow(manhattanDist, 2)) / (2 * pow(neighborhoodRadius, 2)));	// weight of learning in the neighborhood, if the selected neuron closer to the BMU, the weight is higher.
+				for(int k=0; k < descriptor.cols ; k++){
+					for(int m=0; m < descriptor.rows ; m++){
+						som[i][j].at<int>(k,m)= som[i][j].at<int>(k,m) + learningDist * currentLearningRate * (descriptor.at<int>(k,m) - som[i][j].at<int>(k,m)); //Update the neighborhood
+					}				
+				}
+			}
+		}
+	}
+	*/
+
 	int manhattanDist; // manhattan distance between best matching unit and neuron at for loop
 	for(int i=0; som.size; i++){
 		for(int j=0; som[i].size; j++){
