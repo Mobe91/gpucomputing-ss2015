@@ -21,11 +21,8 @@ void VLADEncoder::encode(float* enc, const Mat &descriptors)
 	uint64_t numData = descriptors.rows;
 	uint64_t dimensions = descriptors.cols;
 	
-	if (data->size() < numData * descriptorCols)
-	{
-		data->resize(numData * descriptorCols);
-		assignments->reserve(numData * numCenters);
-	}
+	data->reserve(numData * descriptorCols);
+	assignments->reserve(numData * numCenters);
 
 	if (descriptors.isContinuous())
 	{

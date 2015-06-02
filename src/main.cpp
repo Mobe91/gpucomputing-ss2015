@@ -5,9 +5,12 @@
 #include <opencv/highgui.h>
 #include <iostream>
 #include <opencv2/features2d.hpp>
-//#include <opencv2/cudafeatures2d.hpp>
 #include <VLADEncoder.h>
-
+#include <CIFARImageLoader.h>
+#include <SOM.h>
+#include <cuda_runtime.h>
+#include "Constants.h"
+#include "SampleVectorGenerator.h"
 
 using namespace cv;
 using namespace std;
@@ -17,15 +20,32 @@ vector<vector<Mat>> som;
 void initSOM(int w, int h, int feature_cnt, int desc_length);
 void learnSOM(Mat descriptor);
 
-#define VLAD_CENTERS 5
-#define ORB_DESCRIPTOR_DIMENSION 32
-
 int main(int argc, char** argv)
 {
 	VideoCapture cap(0);
 	cap.set(CV_CAP_PROP_FRAME_WIDTH, 1280);
 	cap.set(CV_CAP_PROP_FRAME_HEIGHT, 720);
 	Mat src;
+
+	vector<string> cifarPaths;
+	cifarPaths.push_back("cifar-10-batches-bin\\data_batch_1.bin");
+	SampleVectorGenerator sampleVectorGenerator(cifarPaths);
+
+	cout << "Generating sample vectors" << endl;
+
+	SampleVectorsHolder* sampleVectorHolder;
+	sampleVectorGenerator.generateSampleVectorsFromCIFAR(&sampleVectorHolder);
+
+	cout << "Generated " << sampleVectorHolder->getSampleVectorCount() << " sample vectors" << endl;
+
+	VLADEncoder vladEncoder = VLADEncoder(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
+	SOM som = SOM(SOM_GRID_SIZE);
+	int somInitResult;
+	if ((somInitResult = som.init(*sampleVectorHolder)) != 0)
+	{
+		cerr << "SOM initialization failed" << endl;
+		return somInitResult;
+	}
 
 	while (cap.isOpened())
 	{
@@ -58,10 +78,12 @@ int main(int argc, char** argv)
 		
 		src.copyTo(img_box);
 		
-		VLADEncoder vladEncoder = VLADEncoder(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
-		for (int i = 0; i < contours_poly.size(); i++){
+		for (int i = 0; i < contours_poly.size(); i++)
+		{
 			double area = contourArea(contours_poly[i]);
-			if (area > 5000 && area < 700000){			// remove very small objects, and the very big ones (background)
+			if (area > 5000 && area < 700000)
+			{			
+				// remove very small objects, and the very big ones (background)
 				//draw bounding box
 				boundRect[i] = boundingRect(Mat(contours_poly[i]));
 				rectangle(img_box, boundRect[i].tl(), boundRect[i].br(), Scalar(0, 255, 0), 2, 8, 0);
@@ -80,7 +102,7 @@ int main(int argc, char** argv)
 				detector->compute(src, features, descriptors);		//create feature description
 				drawKeypoints(img_feature, features, img_feature, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
 
-				if (descriptors.rows > 0)
+				if (descriptors.rows >= VLAD_CENTERS)
 				{
 					assert(descriptors.cols == ORB_DESCRIPTOR_DIMENSION);
 					// allocate space for vlad encoding
@@ -88,7 +110,8 @@ int main(int argc, char** argv)
 					vladEncoder.encode(vlad, descriptors);
 					for (int i = 0; i < VLAD_CENTERS; i++)
 					{
-						for (int j = 0; j < descriptors.cols; j++){
+						for (int j = 0; j < descriptors.cols; j++)
+						{
 							cout << vlad[i * descriptors.cols + j] << ",";	
 						}
 						cout << endl;
@@ -100,7 +123,8 @@ int main(int argc, char** argv)
 			}
 		}
 		
-		if (img_feature.size().height > 0){
+		if (img_feature.size().height > 0)
+		{
 			imshow("Features", img_feature);
 			imshow("Boxes", img_box);
 		}
@@ -108,7 +132,8 @@ int main(int argc, char** argv)
 		waitKey(10);
 	}
 
-	
+	cudaDeviceReset();
+
 	return 0;
 }
 
@@ -116,10 +141,12 @@ void initSOM(int w, int h, int feature_cnt, int desc_length){
 	som.resize(w);
 
 	//fill the map with random values
-	for (int i = 0; i < w; i++){
+	for (int i = 0; i < w; i++)
+	{
 		som[i].resize(h);
 
-		for (int j = 0; j < h; j++){
+		for (int j = 0; j < h; j++)
+		{
 			Mat m = Mat(desc_length, feature_cnt, CV_8U); // TODO check orientation
 			randu(m, Scalar::all(0), Scalar::all(255));
 
@@ -128,13 +155,17 @@ void initSOM(int w, int h, int feature_cnt, int desc_length){
 	}
 }
 
-void learnSOM(Mat descriptor){
+void learnSOM(Mat descriptor)
+{
 	Point2i best;
 	int best_distance = INT_MAX;
-	for (int i = 0; i < som.size(); i++){
-		for (int j = 0; j < som[i].size(); j++){
+	for (int i = 0; i < som.size(); i++)
+	{
+		for (int j = 0; j < som[i].size(); j++)
+		{
 			int distance = 0;						//TODO define metric !
-			if (distance < best_distance){
+			if (distance < best_distance)
+			{
 				best_distance = distance;
 				best.x = i;
 				best.y = j;

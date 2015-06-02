@@ -3,3 +3,4 @@ x86
 *.vcxproj
 *.vcxproj.user
 *.pdb
+cifar-10-batches-bin/

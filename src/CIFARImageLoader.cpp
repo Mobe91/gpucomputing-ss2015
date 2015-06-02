@@ -1,5 +1,6 @@
 #include "CIFARImageLoader.h"
 
+using namespace cv;
 //see header file for the documentation
 
 CIFARImageLoader::~CIFARImageLoader()
@@ -7,7 +8,8 @@ CIFARImageLoader::~CIFARImageLoader()
 	delete file;
 }
 
-CIFARImageLoader::CIFARImageLoader(string filename){
+CIFARImageLoader::CIFARImageLoader(string filename)
+{
 	file = new ifstream (filename, ios::in | ios::binary);
 
 	if (!file->is_open()) throw exception();
@@ -15,20 +17,33 @@ CIFARImageLoader::CIFARImageLoader(string filename){
 	file->seekg(0, ios::end);
 	size = file->tellg();
 	file->seekg(0, ios::beg);
+
+	pictureCount = size / (IMG_SIZE * 3 + 1);
 }
 
-pair<Mat, int> CIFARImageLoader::getNextImage(){
+pair<Mat, int> CIFARImageLoader::getNextImage()
+{
+	pair<Mat, int> labeledImg;
+	this->getNextImage(labeledImg);
+	return labeledImg;
+}
+
+void CIFARImageLoader::getNextImage(pair<Mat, int> &out)
+{
 	//end of file?
-	if (size - file->tellg() < IMG_SIZE*3 + 1) return make_pair(Mat(),-1);
+	ifstream::pos_type remaining = this->size - file->tellg();
+	if (remaining < IMG_SIZE * 3 + 1) {
+		out.second = -1;
+		return;
+	}
 
 	char *r, *g, *b;
 	r = new char[IMG_SIZE];
 	g = new char[IMG_SIZE];
 	b = new char[IMG_SIZE];
-	Mat img;
-	char cat;
 
-	file->read(&cat, 1);		//the first byte is the image class
+	out.second = 0;
+	file->read((char*) &out.second, 1);		//the first byte is the image class
 	file->read(r, IMG_SIZE);
 	file->read(g, IMG_SIZE);
 	file->read(b, IMG_SIZE);
@@ -38,7 +53,15 @@ pair<Mat, int> CIFARImageLoader::getNextImage(){
 	channels.push_back(Mat(size, CV_8U, (void*)g));
 	channels.push_back(Mat(size, CV_8U, (void*)b));
 
-	merge(channels, img);
+	merge(channels, out.first);
+}
 
-	return make_pair(img, cat);
+void CIFARImageLoader::reset()
+{
+	file->seekg(0, ios::beg);
+}
+
+int CIFARImageLoader::getPictureCount()
+{
+	return this->pictureCount;
 }
