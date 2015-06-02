@@ -41,7 +41,7 @@ int main(int argc, char** argv)
 	VLADEncoder vladEncoder = VLADEncoder(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
 	SOM som = SOM(SOM_GRID_SIZE);
 	int somInitResult;
-	if ((somInitResult = som.init(*sampleVectorHolder)) != 0)
+	if ((somInitResult = som.initSOM(*sampleVectorHolder)) != 0)
 	{
 		cerr << "SOM initialization failed" << endl;
 		return somInitResult;

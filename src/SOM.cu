@@ -15,7 +15,7 @@ SOM::~SOM()
 {
 	cudaFree(d_somGrid);
 }
-int SOM::init(SampleVectorsHolder &vectorsHolder)
+int SOM::initSOM(SampleVectorsHolder &vectorsHolder)
 {
 	const float* sampleVectors = vectorsHolder.getSampleVectors();
 	const int sampleVectorCount = vectorsHolder.getSampleVectorCount();
