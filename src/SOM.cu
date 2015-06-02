@@ -139,8 +139,8 @@ void SOM::learnSOM(Mat descriptor){
 	*/
 
 	int manhattanDist; // manhattan distance between best matching unit and neuron at for loop
-	for (int i = 0; som.size; i++){
-		for (int j = 0; som[i].size; j++){
+	for (int i = 0; som.size(); i++){
+		for (int j = 0; som[i].size(); j++){
 			manhattanDist = abs(best.x - i) + abs(best.y - j);
 			if (manhattanDist <= neighborhoodRadius){
 				currentLearningRate = initialLearningRate * exp(-(double)currentIterarion / maxIterationNum); // current learing rate is decreasing with iterations.
