@@ -44,6 +44,7 @@ void VLADEncoder::encode(float* enc, const Mat &descriptors)
 		dimensions,
 		numData,
 		numCenters);
+
 	// find nearest cluster centers for the data that should be encoded
 	vl_kmeans_quantize(kmeans, assignments->data(), NULL, data->data(), numData);
 	
@@ -56,5 +57,5 @@ void VLADEncoder::encode(float* enc, const Mat &descriptors)
 		data->data(), 
 		numData,
 		assignments->data(),
-		0);
+		VL_VLAD_FLAG_NORMALIZE_COMPONENTS);
 }
