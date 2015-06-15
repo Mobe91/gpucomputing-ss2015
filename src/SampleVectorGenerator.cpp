@@ -3,6 +3,7 @@
 #include "Constants.h"
 #include <opencv2/features2d.hpp>
 #include "VLADEncoder.h"
+#include <iostream>
 
 using namespace cv;
 
@@ -35,15 +36,15 @@ void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder**
 	Mat descriptors;
 	VLADEncoder vladEncoder(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
 
-	float min[ORB_DESCRIPTOR_DIMENSION];
-	float max[ORB_DESCRIPTOR_DIMENSION];
+	//float min[ORB_DESCRIPTOR_DIMENSION];
+	//float max[ORB_DESCRIPTOR_DIMENSION];
 
 	// init min/max arrays
-	for (int i = 0; i < ORB_DESCRIPTOR_DIMENSION; i++)
+	/*for (int i = 0; i < ORB_DESCRIPTOR_DIMENSION; i++)
 	{
 		min[i] = std::numeric_limits<float>::max();
 		max[i] = std::numeric_limits<float>::min();
-	}
+	}*/
 
 	for (auto &loader : loaders)
 	{
@@ -63,14 +64,14 @@ void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder**
 					sampleVectorsCount++;
 
 					// update min max
-					for (int row = 0; row < VLAD_CENTERS; row++)
+					/*for (int row = 0; row < VLAD_CENTERS; row++)
 					{
 						for (int col = 0; col < ORB_DESCRIPTOR_DIMENSION; col++)
 						{
 							min[col] = MIN(min[col], *(currentSampleVector + row * descriptors.cols + col));
 							max[col] = MAX(max[col], *(currentSampleVector + row * descriptors.cols + col));
 						}
-					}
+					}*/
 
 				}
 
@@ -79,7 +80,7 @@ void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder**
 	}
 
 	// normalize values
-	for (int sampleVectorIdx = 0; sampleVectorIdx < sampleVectorsCount; sampleVectorIdx++)
+	/*for (int sampleVectorIdx = 0; sampleVectorIdx < sampleVectorsCount; sampleVectorIdx++)
 	{
 		float* currentSampleVector = sampleVectors + sampleVectorIdx * VLAD_CENTERS * ORB_DESCRIPTOR_DIMENSION;
 		for (int row = 0; row < VLAD_CENTERS; row++)
@@ -91,7 +92,7 @@ void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder**
 				assert(*currentVectorElement >= 0.0f && *currentVectorElement <= 1.0f);
 			}
 		}
-	}
+	}*/
 
 	*out = new SampleVectorsHolder(sampleVectors, sampleVectorsCount, VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
 }
