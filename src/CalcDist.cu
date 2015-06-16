@@ -9,8 +9,11 @@
 #include "CalcDist.cuh"
 
 
+__device__ float* getSOMNode(float* som, int x, int y){
+	return som + y * VLAD_CENTERS * ORB_DESCRIPTOR_DIMENSION * SOM_GRID_SIZE + x * ORB_DESCRIPTOR_DIMENSION * VLAD_CENTERS;
+}
 
-__global__ void calcDist(float *map, float *input, float *result){
+__global__ void calcDist(float *som, float *input, float *result){
 	int tid = threadIdx.x;
 
 
@@ -21,8 +24,11 @@ __global__ void calcDist(float *map, float *input, float *result){
 
 	float distance = 1;
 
+	// load som node pointer to register for each thread
+	float *somNodeStart = getSOMNode(som, blockIdx.x, blockIdx.y);
+
 	for (int i = 0; i < VLAD_CENTERS; i++){
-		neuron_vector[tid] = map[blockIdx.x*ORB_DESCRIPTOR_DIMENSION*VLAD_CENTERS + i*VLAD_CENTERS + tid]; //load one vector of the neuron
+		neuron_vector[tid] = somNodeStart[blockIdx.x*ORB_DESCRIPTOR_DIMENSION*VLAD_CENTERS + i*VLAD_CENTERS + tid]; //load one vector of the neuron
 		//__syncthreads();
 
 		//calculate distance matrix ( one neuron vector to all input vectors

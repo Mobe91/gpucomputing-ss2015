@@ -17,6 +17,12 @@ private:
 	vector<float>* data;
 	vector<vl_uint32>* assignments;
 	VlKMeans* kmeans;
+
+	void customVladEncode(float * enc,
+		float const * means, vl_size dimension, vl_size numClusters,
+		float const * data, vl_size numData,
+		vl_uint32 const * assignments,
+		int flags);
 public:
 	VLADEncoder(const int numCenters, const int descriptorCols);
 	~VLADEncoder();

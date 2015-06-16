@@ -61,6 +61,7 @@ void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder**
 				{
 					float* currentSampleVector = sampleVectors  + sampleVectorsCount * VLAD_CENTERS * ORB_DESCRIPTOR_DIMENSION;
 					vladEncoder.encode(currentSampleVector, descriptors);
+
 					sampleVectorsCount++;
 
 					// update min max

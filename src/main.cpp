@@ -33,12 +33,12 @@ int main(int argc, char** argv)
 
 	cout << "Generating sample vectors" << endl;
 
+	VLADEncoder vladEncoder = VLADEncoder(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
 	SampleVectorsHolder* sampleVectorHolder;
 	sampleVectorGenerator.generateSampleVectorsFromCIFAR(&sampleVectorHolder);
 
 	cout << "Generated " << sampleVectorHolder->getSampleVectorCount() << " sample vectors" << endl;
 
-	VLADEncoder vladEncoder = VLADEncoder(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
 	SOM som = SOM(SOM_GRID_SIZE);
 	int somInitResult;
 	if ((somInitResult = som.initSOM(*sampleVectorHolder)) != 0)
@@ -108,7 +108,7 @@ int main(int argc, char** argv)
 					// allocate space for vlad encoding
 					float* vlad = new float[descriptors.cols * VLAD_CENTERS];
 					vladEncoder.encode(vlad, descriptors);
-					for (int i = 0; i < VLAD_CENTERS; i++)
+					/*for (int i = 0; i < VLAD_CENTERS; i++)
 					{
 						for (int j = 0; j < descriptors.cols; j++)
 						{
@@ -116,7 +116,7 @@ int main(int argc, char** argv)
 						}
 						cout << endl;
 					}
-					cout << "-----" << endl;
+					cout << "-----" << endl;*/
 					delete[] vlad;
 				}
 				//TODO call learn here
