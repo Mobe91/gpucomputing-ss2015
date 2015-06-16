@@ -9,6 +9,7 @@ using namespace cv;
 
 SampleVectorGenerator::SampleVectorGenerator(vector<string> rawCIFARFilePaths) : loaders() {
 	loaders.reserve(rawCIFARFilePaths.size());
+	totalPictureCount = 0;
 	for (auto &rawCIFAR : rawCIFARFilePaths)
 	{
 		CIFARImageLoader* imgLoader = new CIFARImageLoader(rawCIFAR);
@@ -29,6 +30,7 @@ void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder**
 {
 	// allocate memory for sample vectors
 	float* sampleVectors = new float[totalPictureCount * ORB_DESCRIPTOR_DIMENSION * VLAD_CENTERS];
+	int *sampleClass = new int[totalPictureCount];
 	int sampleVectorsCount = 0;
 	pair<Mat, int> imgPair;
 	cv::Ptr<FeatureDetector> detector = cv::ORB::create(50, 1.2f, 8, 7, 0, 2, 0, 7);
@@ -45,7 +47,7 @@ void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder**
 		min[i] = std::numeric_limits<float>::max();
 		max[i] = std::numeric_limits<float>::min();
 	}*/
-
+	
 	for (auto &loader : loaders)
 	{
 		do {
@@ -61,7 +63,7 @@ void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder**
 				{
 					float* currentSampleVector = sampleVectors  + sampleVectorsCount * VLAD_CENTERS * ORB_DESCRIPTOR_DIMENSION;
 					vladEncoder.encode(currentSampleVector, descriptors);
-
+					sampleClass[sampleVectorsCount] = imgPair.second;
 					sampleVectorsCount++;
 
 					// update min max
@@ -95,5 +97,5 @@ void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder**
 		}
 	}*/
 
-	*out = new SampleVectorsHolder(sampleVectors, sampleVectorsCount, VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
+	*out = new SampleVectorsHolder(sampleVectors, sampleClass, sampleVectorsCount, VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
 }
