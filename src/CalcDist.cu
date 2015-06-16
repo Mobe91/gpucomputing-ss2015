@@ -9,11 +9,8 @@
 #include "CalcDist.cuh"
 
 
-__device__ float* getSOMNode(float* som, int x, int y){
-	return som + y * VLAD_CENTERS * ORB_DESCRIPTOR_DIMENSION * SOM_GRID_SIZE + x * ORB_DESCRIPTOR_DIMENSION * VLAD_CENTERS;
-}
 
-__global__ void calcDist(float *som, float *input, float *result){
+__global__ void calcDist(float *map, float *input, float *result){
 	int tid = threadIdx.x;
 
 
@@ -24,11 +21,8 @@ __global__ void calcDist(float *som, float *input, float *result){
 
 	float distance = 1;
 
-	// load som node pointer to register for each thread
-	float *somNodeStart = getSOMNode(som, blockIdx.x, blockIdx.y);
-
 	for (int i = 0; i < VLAD_CENTERS; i++){
-		neuron_vector[tid] = somNodeStart[blockIdx.x*ORB_DESCRIPTOR_DIMENSION*VLAD_CENTERS + i*VLAD_CENTERS + tid]; //load one vector of the neuron
+		neuron_vector[tid] = map[blockIdx.x*ORB_DESCRIPTOR_DIMENSION*VLAD_CENTERS + i*VLAD_CENTERS + tid]; //load one vector of the neuron
 		//__syncthreads();
 
 		//calculate distance matrix ( one neuron vector to all input vectors
@@ -36,7 +30,7 @@ __global__ void calcDist(float *som, float *input, float *result){
 			dist[j*ORB_DESCRIPTOR_DIMENSION + tid] = abs(neuron_vector[tid] - input[j*VLAD_CENTERS + tid]);
 		}
 		//__syncthreads();
-		
+
 		//sum the individual distance values
 		//unrolled reduction
 		//TODO half of the threads are idle at the beginning
@@ -68,7 +62,7 @@ __global__ void calcDist(float *som, float *input, float *result){
 		if (tid == 0){
 			for (int j = 0; j < VLAD_CENTERS; j++) {
 				//printf("val %f\n", sum[i*VLAD_CENTERS + tid].x);
-				if (sum[i*VLAD_CENTERS+tid].x < best.x){
+				if (sum[i*VLAD_CENTERS + tid].x < best.x){
 					//printf("new best %f\n", sum[i*VLAD_CENTERS + tid].x);
 					best.x = sum[i*VLAD_CENTERS + j].x;
 					best.y = j;
@@ -77,7 +71,7 @@ __global__ void calcDist(float *som, float *input, float *result){
 			distance += best.x;
 		}
 		//__syncthreads();
-		
+
 		//best match found --> do not check this vector
 		//set all sums for this vector to max float
 		for (int j = 0; j < (VLAD_CENTERS*VLAD_CENTERS) / blockDim.x; j++){
