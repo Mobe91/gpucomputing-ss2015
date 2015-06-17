@@ -11,6 +11,7 @@
 #include <cuda_runtime.h>
 #include "Constants.h"
 #include "SampleVectorGenerator.h"
+#include "CalcDist.cuh"
 
 using namespace cv;
 using namespace std;
@@ -28,17 +29,17 @@ int main(int argc, char** argv)
 	Mat src;
 
 	vector<string> cifarPaths;
-	cifarPaths.push_back("cifar-10-batches-bin\\data_batch_1.bin");
+	cifarPaths.push_back("C:\\Users\\Luke\\Google Drive\\TU\\GPU\\VS_Project\\data_batch_1.bin");
 	SampleVectorGenerator sampleVectorGenerator(cifarPaths);
 
 	cout << "Generating sample vectors" << endl;
 
-	VLADEncoder vladEncoder = VLADEncoder(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
 	SampleVectorsHolder* sampleVectorHolder;
 	sampleVectorGenerator.generateSampleVectorsFromCIFAR(&sampleVectorHolder);
 
 	cout << "Generated " << sampleVectorHolder->getSampleVectorCount() << " sample vectors" << endl;
 
+	VLADEncoder vladEncoder = VLADEncoder(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
 	SOM som = SOM(SOM_GRID_SIZE);
 	int somInitResult;
 	if ((somInitResult = som.initSOM(*sampleVectorHolder)) != 0)
@@ -46,7 +47,85 @@ int main(int argc, char** argv)
 		cerr << "SOM initialization failed" << endl;
 		return somInitResult;
 	}
+	float sameAVG = 0, diffAVG = 0;
+	int sameCNT = 0, diffCNT = 0;
 
+		
+		
+		for (int i = 0; i < 100; i++){
+
+			Mat AM(Size(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION), CV_32F, (float*)sampleVectorHolder->getSampleVectors() + i*VLAD_CENTERS*ORB_DESCRIPTOR_DIMENSION);
+			Mat BM(Size(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION), CV_32F, (float*)sampleVectorHolder->getSampleVectors() + (i + 1)*VLAD_CENTERS*ORB_DESCRIPTOR_DIMENSION);
+			int classA = sampleVectorHolder->getSampleClasses()[i];
+			int classB = sampleVectorHolder->getSampleClasses()[i + 1];
+			/*cout << "A: " << endl;
+			for (int i = 0; i < VLAD_CENTERS; i++)
+			{
+				for (int j = 0; j < AM.cols; j++)
+				{
+					cout << 0 + AM.at<float>(i, j) << ",";
+				}
+				cout << endl;
+			}
+			cout << "B: " << endl;
+			for (int i = 0; i < VLAD_CENTERS; i++)
+			{
+				for (int j = 0; j < BM.cols; j++)
+				{
+					cout << 0 + BM.at<float>(i, j) << ",";
+				}
+				cout << endl;
+			}*/
+			//cout << "Classes: " << classA << ", " << classB<<endl;
+
+			//cout << "norm: " << cv::norm(AM, BM, NORM_L2) << endl;
+
+			//float resultGPU = calcDistGPU(som.d_somGrid, (float*)AM.data);
+			float resultGPU = calcDistGPU2((float*)AM.data, (float*)BM.data);
+			float resultNORM = cv::norm(AM, BM, NORM_L2);
+			if (classA == classB){
+				sameAVG += resultGPU;
+				sameCNT++;
+			}
+			else{
+				diffAVG += resultGPU;
+				diffCNT++;
+			}
+
+			cout << "Classes: " << classA << ", " << classB << "GPU result: " << resultGPU << " L2Norm: "<<resultNORM<<endl;
+			//cout << "--------" << endl;
+
+			/*float overall = 0;
+			int mask = 0;
+			for (int i = 0; i < VLAD_CENTERS; i++){
+				float bestdist = std::numeric_limits<float>::max();;
+				int best = 0;
+				for (int j = 0; j < VLAD_CENTERS; j++){
+					if ((mask & 1 << j) != 0)continue;
+					float dist = 0;
+					for (int k = 0; k < ORB_DESCRIPTOR_DIMENSION; k++){
+						dist += fabs(AM.at<float>(k, i) - BM.at<float>(k, j));
+						//if (i == 0 && j == 0) cout << fabs(AM.at<float>(k, i) - BM.at<float>(k, j)) << " from " << AM.at<float>(k, i) << " - " << BM.at<float>(k, j) << endl;
+					}
+					//cout << "sum " << i*VLAD_CENTERS+j << ": " << dist << endl;
+					if (dist < bestdist){
+						bestdist = dist;
+						best = j;
+					}
+				}
+				//cout << "match: " << i << " " << best << ": dist = " << bestdist << endl;
+				overall += bestdist;
+				mask |= 1 << best;
+			}
+			cout << "mydist: " << overall << endl;*/
+			
+		}
+
+	cout << "Average difference for same classes: " << sameAVG / sameCNT << endl;
+	cout << "Average difference for different classes: " << diffAVG / diffCNT << endl;
+
+	cout << sameCNT << " same, " << diffCNT << " different" << endl;
+	//VLADEncoder vladEncoder = VLADEncoder(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
 	while (cap.isOpened())
 	{
 		if (!cap.read(src))
@@ -75,14 +154,14 @@ int main(int argc, char** argv)
 		}
 
 		Mat img_feature, img_box;
-		
+
 		src.copyTo(img_box);
-		
+		vector<Mat> vladDesc;
 		for (int i = 0; i < contours_poly.size(); i++)
 		{
 			double area = contourArea(contours_poly[i]);
-			if (area > 5000 && area < 700000)
-			{			
+			if (area > 5000 && area < 300000)
+			{
 				// remove very small objects, and the very big ones (background)
 				//draw bounding box
 				boundRect[i] = boundingRect(Mat(contours_poly[i]));
@@ -91,7 +170,7 @@ int main(int argc, char** argv)
 
 				vector<KeyPoint> features;
 				Mat descriptors;
-				cv::Ptr<FeatureDetector> detector = cv::ORB::create();
+				cv::Ptr<FeatureDetector> detector = cv::ORB::create();//(50, 1.2f, 8, 7, 0, 2, 0, 7);
 				//cv::Ptr<FeatureDetector> detector = cv::cuda::ORB::create();
 
 				//create mask  
@@ -100,29 +179,85 @@ int main(int argc, char** argv)
 				roi = Scalar(255, 255, 255);
 				detector->detect(src, features, mask);				//find features
 				detector->compute(src, features, descriptors);		//create feature description
-				drawKeypoints(img_feature, features, img_feature, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
 
+				drawKeypoints(img_feature, features, img_feature, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
+				cout << "desc type " << descriptors.type() << endl;
 				if (descriptors.rows >= VLAD_CENTERS)
 				{
 					assert(descriptors.cols == ORB_DESCRIPTOR_DIMENSION);
 					// allocate space for vlad encoding
 					float* vlad = new float[descriptors.cols * VLAD_CENTERS];
-					vladEncoder.encode(vlad, descriptors);
-					/*for (int i = 0; i < VLAD_CENTERS; i++)
+					imshow("desc int", descriptors);
+					waitKey(10);
+					Mat descfloat;
+					descriptors.convertTo(descfloat, CV_32FC1);
+					imshow("desc float", descfloat);
+					waitKey(10);
+					vladEncoder.encode(vlad, descfloat);
+
+					Mat tmp(Size(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION), CV_32F, vlad);
+					vladDesc.push_back(tmp.clone());
+					for (int i = 0; i < VLAD_CENTERS; i++)
 					{
 						for (int j = 0; j < descriptors.cols; j++)
 						{
-							cout << vlad[i * descriptors.cols + j] << ",";	
+							cout << 0 + descriptors.at<uint8_t>(i, j) << ",";
 						}
 						cout << endl;
 					}
-					cout << "-----" << endl;*/
+
+					cout << "----- float:" << endl;
+					for (int i = 0; i < VLAD_CENTERS; i++)
+					{
+						for (int j = 0; j < descriptors.cols; j++)
+						{
+							cout << descfloat.at<float>(i, j) << ",";
+						}
+						cout << endl;
+					}
+
+					cout << "----- vlad:" << endl;
+
+					for (int i = 0; i < VLAD_CENTERS; i++)
+					{
+						for (int j = 0; j < descriptors.cols; j++)
+						{
+							cout << vlad[i * descriptors.cols + j] << ",";
+						}
+						cout << endl;
+					}
+
+					cout << "-----" << endl;
 					delete[] vlad;
 				}
 				//TODO call learn here
 			}
 		}
-		
+
+		if (vladDesc.size() == 2){
+			cout << "norm: " << cv::norm(vladDesc[0], vladDesc[1], NORM_L2) << endl;
+			float overall = 0;
+			int mask = 0;
+			for (int i = 0; i < VLAD_CENTERS; i++){
+				float bestdist = std::numeric_limits<float>::max();;
+				int best = 0;
+				for (int j = 0; j < VLAD_CENTERS; j++){
+					if ((mask & 1 << j) != 0)continue;
+					float dist = 0;
+					for (int k = 0; k < ORB_DESCRIPTOR_DIMENSION; k++){
+						dist += fabs(vladDesc[0].at<float>(k, i) - vladDesc[1].at<float>(k, j));
+					}
+					if (dist < bestdist){
+						bestdist = dist;
+						best = j;
+					}
+				}
+				overall += bestdist;
+				mask |= 1 << best;
+			}
+			cout << "mydist: " << overall << endl;
+		}
+
 		if (img_feature.size().height > 0)
 		{
 			imshow("Features", img_feature);
