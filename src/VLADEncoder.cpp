@@ -138,16 +138,18 @@ void VLADEncoder::encode(float* enc, const Mat &descriptors)
 		numCenters);
 
 	// find nearest cluster centers for the data that should be encoded
-	vl_kmeans_quantize(kmeans, assignments->data(), NULL, data->data(), numData);
+	//vl_kmeans_quantize(kmeans, assignments->data(), NULL, data->data(), numData);
 	
+
+	const float *means = (const float*) vl_kmeans_get_centers(kmeans);
+	memcpy(enc, means, sizeof(float) * numCenters * dimensions);
 	// do the encoding job
-	customVladEncode(enc,
-		//VL_TYPE_FLOAT,
+	/*customVladEncode(enc,
 		(float const *) vl_kmeans_get_centers(kmeans),
 		dimensions, 
 		numCenters,
 		(float const *) data->data(),
 		numData,
 		assignments->data(),
-		VL_VLAD_FLAG_NORMALIZE_COMPONENTS);
+		VL_VLAD_FLAG_NORMALIZE_COMPONENTS);*/
 }

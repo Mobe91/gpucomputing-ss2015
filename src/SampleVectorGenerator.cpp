@@ -1,6 +1,7 @@
 #include "SampleVectorGenerator.h"
 #include "CIFARImageLoader.h"
 #include "Constants.h"
+#include "opencv2/highgui/highgui.hpp"
 #include <opencv2/features2d.hpp>
 #include "VLADEncoder.h"
 #include <iostream>
@@ -35,7 +36,7 @@ void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder**
 	pair<Mat, int> imgPair;
 	cv::Ptr<FeatureDetector> detector = cv::ORB::create(50, 1.2f, 8, 7, 0, 2, 0, 7);
 	vector<KeyPoint> features;
-	Mat descriptors;
+	Mat descriptors, descriptors2;
 	VLADEncoder vladEncoder(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
 
 	//float min[ORB_DESCRIPTOR_DIMENSION];
@@ -52,6 +53,7 @@ void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder**
 	{
 		do {
 			loader->getNextImage(imgPair);
+			
 			if (imgPair.second != -1)
 			{
 				features.clear();
@@ -59,25 +61,72 @@ void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder**
 				detector->detect(imgPair.first, features);				//find features
 				detector->compute(imgPair.first, features, descriptors);		//create feature description
 
+				descriptors2 = 0;
+				detector->detect(imgPair.first, features);				//find features
+				detector->compute(imgPair.first, features, descriptors2);		//create feature description
+
 				if (descriptors.rows >= VLAD_CENTERS)
 				{
-					float* currentSampleVector = sampleVectors  + sampleVectorsCount * VLAD_CENTERS * ORB_DESCRIPTOR_DIMENSION;
-					vladEncoder.encode(currentSampleVector, descriptors);
+					float* currentSampleVector = sampleVectors + sampleVectorsCount * VLAD_CENTERS * ORB_DESCRIPTOR_DIMENSION;
+
+					/*for (int i = 0; i < VLAD_CENTERS; i++)
+					{
+						const uint8_t* row = descriptors.ptr(i);
+						std::copy(row, row + descriptors.cols, currentSampleVector + i * descriptors.cols);
+					}*/
+
+					/*cv::norm()
+					imshow("IMG1", descriptors);
+					imshow("IMG2", descriptors2);
+					waitKey();*/
+
+					/*for (int i = 0; i < VLAD_CENTERS; i++)
+					{
+						for (int j = 0; j < ORB_DESCRIPTOR_DIMENSION; j++)
+						{
+							cout << currentSampleVector[i * descriptors.cols + j] << ",";
+						}
+						cout << endl;
+					}*/
+
+					Mat floatDescriptors;
+					descriptors.convertTo(floatDescriptors, CV_32F);
+					Mat centers, labels;
+					cv::kmeans(floatDescriptors, VLAD_CENTERS, labels, TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 10, 1.0), 3, 0, centers);
+					for (int i = 0; i < centers.rows; i++)
+					{
+						const uint8_t* row = descriptors.ptr(i);
+						std::copy(row, row + descriptors.cols, currentSampleVector + i * descriptors.cols);
+					}
+
+
+					//vladEncoder.encode(currentSampleVector, descriptors);
 					sampleClass[sampleVectorsCount] = imgPair.second;
 					sampleVectorsCount++;
 
-					// update min max
-					/*for (int row = 0; row < VLAD_CENTERS; row++)
+					cout << "Descriptor Means 1_1:" << endl;
+					for (int i = 0; i < VLAD_CENTERS; i++)
 					{
-						for (int col = 0; col < ORB_DESCRIPTOR_DIMENSION; col++)
+						for (int j = 0; j < ORB_DESCRIPTOR_DIMENSION; j++)
 						{
-							min[col] = MIN(min[col], *(currentSampleVector + row * descriptors.cols + col));
-							max[col] = MAX(max[col], *(currentSampleVector + row * descriptors.cols + col));
+							cout << currentSampleVector[i * descriptors.cols + j] << ",";
 						}
-					}*/
+						cout << endl;
+					}
+					cout << "-----" << endl;
 
+					vladEncoder.encode(currentSampleVector, descriptors);
+					cout << "Descriptor Means 1_2:" << endl;
+					for (int i = 0; i < VLAD_CENTERS; i++)
+					{
+						for (int j = 0; j < ORB_DESCRIPTOR_DIMENSION; j++)
+						{
+							cout << currentSampleVector[i * descriptors.cols + j] << ",";
+						}
+						cout << endl;
+					}
 				}
-
+				
 			}
 		} while (imgPair.second != -1);
 	}
