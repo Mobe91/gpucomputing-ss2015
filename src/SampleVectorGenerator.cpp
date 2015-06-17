@@ -27,7 +27,7 @@ SampleVectorGenerator::~SampleVectorGenerator() {
 	}
 }
 
-void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder** out)
+void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder** out, const int count)
 {
 	// allocate memory for sample vectors
 	float* sampleVectors = new float[totalPictureCount * ORB_DESCRIPTOR_DIMENSION * VLAD_CENTERS];
@@ -48,7 +48,6 @@ void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder**
 		min[i] = std::numeric_limits<float>::max();
 		max[i] = std::numeric_limits<float>::min();
 	}*/
-	
 	for (auto &loader : loaders)
 	{
 		do {
@@ -104,7 +103,7 @@ void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder**
 					sampleClass[sampleVectorsCount] = imgPair.second;
 					sampleVectorsCount++;
 
-					cout << "Descriptor Means 1_1:" << endl;
+					/*cout << "Descriptor Means 1_1:" << endl;
 					for (int i = 0; i < VLAD_CENTERS; i++)
 					{
 						for (int j = 0; j < ORB_DESCRIPTOR_DIMENSION; j++)
@@ -115,7 +114,7 @@ void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder**
 					}
 					cout << "-----" << endl;
 
-					vladEncoder.encode(currentSampleVector, descriptors);
+					//vladEncoder.encode(currentSampleVector, descriptors);
 					cout << "Descriptor Means 1_2:" << endl;
 					for (int i = 0; i < VLAD_CENTERS; i++)
 					{
@@ -124,11 +123,11 @@ void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder**
 							cout << currentSampleVector[i * descriptors.cols + j] << ",";
 						}
 						cout << endl;
-					}
+					}*/
 				}
 				
 			}
-		} while (imgPair.second != -1);
+		} while (imgPair.second != -1 && (count == 0 || sampleVectorsCount < count));
 	}
 
 	// normalize values

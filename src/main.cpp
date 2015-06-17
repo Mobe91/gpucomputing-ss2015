@@ -21,6 +21,41 @@ vector<vector<Mat>> som;
 void initSOM(int w, int h, int feature_cnt, int desc_length);
 void learnSOM(Mat descriptor);
 
+float haussdorfDistance(Mat &set1, Mat &set2, int distType)
+{
+	// Building distance matrix //
+	Mat disMat(set1.cols, set2.cols, CV_32F);
+	float *minDistances = new float[set1.rows];
+
+	for (int row1 = 0; row1 < set1.rows; row1++)
+	{
+		Mat matRow1 = set1.row(row1);
+
+		float minDist = numeric_limits<float>::max();
+		for (int row2 = 0; row2 < set2.rows; row2++)
+		{
+			Mat matRow2 = set2.row(row2);
+			float dist = norm(matRow1, matRow2, distType);
+			if (dist < minDist)
+			{
+				minDist = dist;
+			}
+		}
+		minDistances[row1] = minDist;
+	}
+
+	float maxDistance = numeric_limits<float>::min();
+	for (int row1 = 0; row1 < set1.rows; row1++)
+	{
+		if (maxDistance < minDistances[row1])
+		{
+			maxDistance = minDistances[row1];
+		}
+	}
+	delete[] minDistances;
+	return maxDistance;
+}
+
 int main(int argc, char** argv)
 {
 	VideoCapture cap(0);
@@ -29,13 +64,14 @@ int main(int argc, char** argv)
 	Mat src;
 
 	vector<string> cifarPaths;
-	cifarPaths.push_back("C:\\Users\\Luke\\Google Drive\\TU\\GPU\\VS_Project\\data_batch_1.bin");
+	cifarPaths.push_back("cifar-10-batches-bin\\data_batch_1.bin");
 	SampleVectorGenerator sampleVectorGenerator(cifarPaths);
 
 	cout << "Generating sample vectors" << endl;
 
+	const int sampleVectorCount = 50;
 	SampleVectorsHolder* sampleVectorHolder;
-	sampleVectorGenerator.generateSampleVectorsFromCIFAR(&sampleVectorHolder);
+	sampleVectorGenerator.generateSampleVectorsFromCIFAR(&sampleVectorHolder, sampleVectorCount);
 
 	cout << "Generated " << sampleVectorHolder->getSampleVectorCount() << " sample vectors" << endl;
 
@@ -49,77 +85,76 @@ int main(int argc, char** argv)
 	}
 	float sameAVG = 0, diffAVG = 0;
 	int sameCNT = 0, diffCNT = 0;
-
 		
-		
-		for (int i = 0; i < 100; i++){
-
-			Mat AM(Size(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION), CV_32F, (float*)sampleVectorHolder->getSampleVectors() + i*VLAD_CENTERS*ORB_DESCRIPTOR_DIMENSION);
-			Mat BM(Size(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION), CV_32F, (float*)sampleVectorHolder->getSampleVectors() + (i + 1)*VLAD_CENTERS*ORB_DESCRIPTOR_DIMENSION);
-			int classA = sampleVectorHolder->getSampleClasses()[i];
-			int classB = sampleVectorHolder->getSampleClasses()[i + 1];
-			/*cout << "A: " << endl;
-			for (int i = 0; i < VLAD_CENTERS; i++)
+	for (int i = 0; i < sampleVectorCount - 1; i++)
+	{
+		Mat AM(Size(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION), CV_32F, (float*)sampleVectorHolder->getSampleVectors() + i*VLAD_CENTERS*ORB_DESCRIPTOR_DIMENSION);
+		Mat BM(Size(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION), CV_32F, (float*)sampleVectorHolder->getSampleVectors() + (i + 1)*VLAD_CENTERS*ORB_DESCRIPTOR_DIMENSION);
+		int classA = sampleVectorHolder->getSampleClasses()[i];
+		int classB = sampleVectorHolder->getSampleClasses()[i + 1];
+		/*cout << "A: " << endl;
+		for (int i = 0; i < VLAD_CENTERS; i++)
+		{
+			for (int j = 0; j < AM.cols; j++)
 			{
-				for (int j = 0; j < AM.cols; j++)
-				{
-					cout << 0 + AM.at<float>(i, j) << ",";
-				}
-				cout << endl;
+				cout << 0 + AM.at<float>(i, j) << ",";
 			}
-			cout << "B: " << endl;
-			for (int i = 0; i < VLAD_CENTERS; i++)
-			{
-				for (int j = 0; j < BM.cols; j++)
-				{
-					cout << 0 + BM.at<float>(i, j) << ",";
-				}
-				cout << endl;
-			}*/
-			//cout << "Classes: " << classA << ", " << classB<<endl;
-
-			//cout << "norm: " << cv::norm(AM, BM, NORM_L2) << endl;
-
-			//float resultGPU = calcDistGPU(som.d_somGrid, (float*)AM.data);
-			float resultGPU = calcDistGPU2((float*)AM.data, (float*)BM.data);
-			float resultNORM = cv::norm(AM, BM, NORM_L2);
-			if (classA == classB){
-				sameAVG += resultGPU;
-				sameCNT++;
-			}
-			else{
-				diffAVG += resultGPU;
-				diffCNT++;
-			}
-
-			cout << "Classes: " << classA << ", " << classB << "GPU result: " << resultGPU << " L2Norm: "<<resultNORM<<endl;
-			//cout << "--------" << endl;
-
-			/*float overall = 0;
-			int mask = 0;
-			for (int i = 0; i < VLAD_CENTERS; i++){
-				float bestdist = std::numeric_limits<float>::max();;
-				int best = 0;
-				for (int j = 0; j < VLAD_CENTERS; j++){
-					if ((mask & 1 << j) != 0)continue;
-					float dist = 0;
-					for (int k = 0; k < ORB_DESCRIPTOR_DIMENSION; k++){
-						dist += fabs(AM.at<float>(k, i) - BM.at<float>(k, j));
-						//if (i == 0 && j == 0) cout << fabs(AM.at<float>(k, i) - BM.at<float>(k, j)) << " from " << AM.at<float>(k, i) << " - " << BM.at<float>(k, j) << endl;
-					}
-					//cout << "sum " << i*VLAD_CENTERS+j << ": " << dist << endl;
-					if (dist < bestdist){
-						bestdist = dist;
-						best = j;
-					}
-				}
-				//cout << "match: " << i << " " << best << ": dist = " << bestdist << endl;
-				overall += bestdist;
-				mask |= 1 << best;
-			}
-			cout << "mydist: " << overall << endl;*/
-			
+			cout << endl;
 		}
+		cout << "B: " << endl;
+		for (int i = 0; i < VLAD_CENTERS; i++)
+		{
+			for (int j = 0; j < BM.cols; j++)
+			{
+				cout << 0 + BM.at<float>(i, j) << ",";
+			}
+			cout << endl;
+		}*/
+		//cout << "Classes: " << classA << ", " << classB<<endl;
+
+		//cout << "norm: " << cv::norm(AM, BM, NORM_L2) << endl;
+
+		//float resultGPU = calcDistGPU(som.d_somGrid, (float*)AM.data);
+		float resultGPU = calcDistGPU2((float*)AM.data, (float*)BM.data);
+		float resultNORM = cv::norm(AM, BM, NORM_L2);
+		float haussDist = haussdorfDistance(AM, BM, NORM_L2);
+		if (classA == classB){
+			sameAVG += haussDist;
+			sameCNT++;
+		}
+		else{
+			diffAVG += haussDist;
+			diffCNT++;
+		}
+
+		cout << "Classes: " << classA << ", " << classB << "GPU result: " << resultGPU << " L2Norm: " << resultNORM << " Hauss: " << haussDist << endl;
+		//cout << "--------" << endl;
+
+		/*float overall = 0;
+		int mask = 0;
+		for (int i = 0; i < VLAD_CENTERS; i++){
+			float bestdist = std::numeric_limits<float>::max();;
+			int best = 0;
+			for (int j = 0; j < VLAD_CENTERS; j++){
+				if ((mask & 1 << j) != 0)continue;
+				float dist = 0;
+				for (int k = 0; k < ORB_DESCRIPTOR_DIMENSION; k++){
+					dist += fabs(AM.at<float>(k, i) - BM.at<float>(k, j));
+					//if (i == 0 && j == 0) cout << fabs(AM.at<float>(k, i) - BM.at<float>(k, j)) << " from " << AM.at<float>(k, i) << " - " << BM.at<float>(k, j) << endl;
+				}
+				//cout << "sum " << i*VLAD_CENTERS+j << ": " << dist << endl;
+				if (dist < bestdist){
+					bestdist = dist;
+					best = j;
+				}
+			}
+			//cout << "match: " << i << " " << best << ": dist = " << bestdist << endl;
+			overall += bestdist;
+			mask |= 1 << best;
+		}
+		cout << "mydist: " << overall << endl;*/
+			
+	}
 
 	cout << "Average difference for same classes: " << sameAVG / sameCNT << endl;
 	cout << "Average difference for different classes: " << diffAVG / diffCNT << endl;

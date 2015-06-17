@@ -15,5 +15,5 @@ public:
 	SampleVectorGenerator(vector<string> rawCIFARFilePaths);
 	~SampleVectorGenerator();
 
-	void generateSampleVectorsFromCIFAR(SampleVectorsHolder** out);
+	void generateSampleVectorsFromCIFAR(SampleVectorsHolder** out, const int count = 0);
 };
