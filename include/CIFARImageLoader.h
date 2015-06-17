@@ -29,9 +29,9 @@ private:
 
 	int pictureCount;
 
-	const int IMG_WIDTH = 32;
-	const int IMG_HEIGHT = 32;
-	const int IMG_SIZE = IMG_WIDTH * IMG_HEIGHT;
+	const int IMG_WIDTH;
+	const int IMG_HEIGHT;
+	const int IMG_SIZE;
 public:
 	/*
 	filename: name of the CIFAR binary file

@@ -8,7 +8,7 @@ CIFARImageLoader::~CIFARImageLoader()
 	delete file;
 }
 
-CIFARImageLoader::CIFARImageLoader(string filename)
+CIFARImageLoader::CIFARImageLoader(string filename) : IMG_WIDTH(32), IMG_HEIGHT(32), IMG_SIZE(IMG_WIDTH * IMG_HEIGHT)
 {
 	file = new ifstream (filename, ios::in | ios::binary);
 
