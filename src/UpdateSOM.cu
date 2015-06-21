@@ -17,10 +17,10 @@ __global__ void updateSOMKernel(float *d_somGrid, float *input, int indexOfBMU, 
 	int BMUXPosition =	indexOfBMU / SOM_GRID_SIZE;
 	int BMUYPosition =	indexOfBMU % SOM_GRID_SIZE;
 	float manhattanDist = abs(blockXPosition - BMUXPosition) + abs(blockYPosition - BMUYPosition);
-	float learningDistance = neighborhoodRadius;
+	float learningDistance = 0;
 	
 	if(manhattanDist <=(int) neighborhoodRadius){
-		float learningDistance = exp( (-1 * manhattanDist * manhattanDist) / (2 * neighborhoodRadius * neighborhoodRadius));
+		learningDistance = exp( (-1 * manhattanDist * manhattanDist) / (2 * neighborhoodRadius * neighborhoodRadius));
 		
 		for (int i = 0; i < VLAD_CENTERS; i++){
 			d_somGrid[blockIdx.x*ORB_DESCRIPTOR_DIMENSION*VLAD_CENTERS + i*ORB_DESCRIPTOR_DIMENSION + threadIdx.x] = 
