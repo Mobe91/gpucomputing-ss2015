@@ -23,9 +23,7 @@ public:
 	float timeConst;
 	float currentLearningRate, initialLearningRate;
 	float learningDist;
-
-
-
+	
 	vector<vector<cv::Mat>> som;
 
 	SOM::SOM(const int gridSize);
