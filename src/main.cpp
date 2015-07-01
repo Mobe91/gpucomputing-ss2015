@@ -159,15 +159,15 @@ int main(int argc, char** argv)
 		Mat threshold_output;
 		cv::cvtColor(src, bwImage, CV_RGB2GRAY);
 		cv::blur(bwImage, bwImage, Size(11, 11));
-		imshow("Blurred", bwImage);
+		//imshow("Blurred", bwImage);
 		cv::Canny(bwImage, bwImage, 10, 10 * 3, 3);
-		imshow("Canny", bwImage);
+		//imshow("Canny", bwImage);
 		//cv::adaptiveThreshold(bwImage, threshold_output, 255.0, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY, 11, 2);
 		morphologyEx(bwImage, bwImage, MORPH_CLOSE, getStructuringElement(MORPH_ELLIPSE, Size(51,51)));
 		//morphologyEx(bwImage, bwImage, MORPH_OPEN, getStructuringElement(MORPH_ELLIPSE, Size(3, 3)));
-		imshow("Closing", bwImage);
+		//imshow("Closing", bwImage);
 		threshold(bwImage, threshold_output, 100, 255, THRESH_BINARY);
-		imshow("bw", threshold_output);
+		//imshow("bw", threshold_output);
 
 		/// Find contours
 		vector<vector<Point> > contours;
@@ -198,6 +198,7 @@ int main(int argc, char** argv)
 				img_box(boundRect[i]).copyTo(img_feature);
 				vector<KeyPoint> features;
 				Mat descriptors;
+				//cv::Ptr<FeatureDetector> detector = ORB::create();
 				cv::Ptr<FeatureDetector> detector = xfeatures2d::SIFT::create();
 				//cv::Ptr<FeatureDetector> detector = cv::cuda::ORB::create();
 
