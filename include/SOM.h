@@ -11,18 +11,21 @@ using namespace std;
 
 class SOM {
 private:
+	
+public:
 	const int gridSize;
 	float* d_somGrid;
 	int dimensionX, dimensionY;
 	int mapRadius;
-	int neighborhoodRadius;
+	float neighborhoodRadius;
 	int maxIterationNum;		//if we use constant learning rate and neighborhood size, some variables will be deleted
 	int currentIterarion;
-	double timeConst;
-	double currentLearningRate, initialLearningRate;
-	double learningDist;
+	float timeConst;
+	float currentLearningRate, initialLearningRate;
+	float learningDist;
 
-public:
+
+
 	vector<vector<cv::Mat>> som;
 
 	SOM::SOM(const int gridSize);
