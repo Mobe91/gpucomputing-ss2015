@@ -12,6 +12,10 @@
 #include "Constants.h"
 #include "SampleVectorGenerator.h"
 #include "CalcDist.cuh"
+#include <opencv2/xfeatures2d.hpp>
+#include <map>
+#include <unordered_map>
+#include <unordered_set>
 
 using namespace cv;
 using namespace std;
@@ -63,7 +67,18 @@ int main(int argc, char** argv)
 	cap.set(CV_CAP_PROP_FRAME_HEIGHT, 720);
 	Mat src;
 
-	vector<string> cifarPaths;
+	// define cluster colors
+	const int numClusterColors = 3;
+	const Scalar clusterColors[] = {
+		Scalar(255, 0, 0), // red
+		Scalar(0, 255, 0), // green
+		Scalar(0, 0, 255) // blue
+	};
+	const Scalar defaultColor = Scalar(255, 255, 255);
+
+	src = imread("vegetables.jpg");
+	cv::resize(src, src, Size(1024, 768));
+	/*vector<string> cifarPaths;
 	cifarPaths.push_back("cifar-10-batches-bin\\data_batch_1.bin");
 	SampleVectorGenerator sampleVectorGenerator(cifarPaths);
 
@@ -110,33 +125,6 @@ int main(int argc, char** argv)
 		}
 		avg_dist /= AM.rows;
 
-		/*printf("-- Max dist : %f \n", max_dist);
-		printf("-- Min dist : %f \n", min_dist);
-		printf("-- Avg dist : %f \n", avg_dist);*/
-
-		/*cout << "A: " << endl;
-		for (int i = 0; i < VLAD_CENTERS; i++)
-		{
-			for (int j = 0; j < AM.cols; j++)
-			{
-				cout << 0 + AM.at<float>(i, j) << ",";
-			}
-			cout << endl;
-		}
-		cout << "B: " << endl;
-		for (int i = 0; i < VLAD_CENTERS; i++)
-		{
-			for (int j = 0; j < BM.cols; j++)
-			{
-				cout << 0 + BM.at<float>(i, j) << ",";
-			}
-			cout << endl;
-		}*/
-		//cout << "Classes: " << classA << ", " << classB<<endl;
-
-		//cout << "norm: " << cv::norm(AM, BM, NORM_L2) << endl;
-
-		//float resultGPU = calcDistGPU(som.d_somGrid, (float*)AM.data);
 		float resultGPU = calcDistGPU2((float*)AM.data, (float*)BM.data);
 		float resultNORM = cv::norm(AM, BM, NORM_L2);
 		float haussDist = haussdorfDistance(AM, BM, NORM_L2);
@@ -151,56 +139,40 @@ int main(int argc, char** argv)
 		}
 
 		cout << "Classes: " << classA << ", " << classB << "GPU result: " << resultGPU << " L2Norm: " << resultNORM << " Hauss: " << haussDist << " CV Matching: " << avg_dist << endl;
-		//cout << "--------" << endl;
-
-		/*float overall = 0;
-		int mask = 0;
-		for (int i = 0; i < VLAD_CENTERS; i++){
-			float bestdist = std::numeric_limits<float>::max();;
-			int best = 0;
-			for (int j = 0; j < VLAD_CENTERS; j++){
-				if ((mask & 1 << j) != 0)continue;
-				float dist = 0;
-				for (int k = 0; k < ORB_DESCRIPTOR_DIMENSION; k++){
-					dist += fabs(AM.at<float>(k, i) - BM.at<float>(k, j));
-					//if (i == 0 && j == 0) cout << fabs(AM.at<float>(k, i) - BM.at<float>(k, j)) << " from " << AM.at<float>(k, i) << " - " << BM.at<float>(k, j) << endl;
-				}
-				//cout << "sum " << i*VLAD_CENTERS+j << ": " << dist << endl;
-				if (dist < bestdist){
-					bestdist = dist;
-					best = j;
-				}
-			}
-			//cout << "match: " << i << " " << best << ": dist = " << bestdist << endl;
-			overall += bestdist;
-			mask |= 1 << best;
-		}
-		cout << "mydist: " << overall << endl;*/
-			
+		//cout << "--------" << endl;	
 	}
 
 	cout << "Average difference for same classes: " << sameAVG / sameCNT << endl;
 	cout << "Average difference for different classes: " << diffAVG / diffCNT << endl;
 
-	cout << sameCNT << " same, " << diffCNT << " different" << endl;
+	cout << sameCNT << " same, " << diffCNT << " different" << endl;*/
 	//VLADEncoder vladEncoder = VLADEncoder(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
-	while (cap.isOpened())
-	{
-		if (!cap.read(src))
-			break;
+	//while (cap.isOpened())
+	//{
+		/*if (!cap.read(src))
+			break;*/
+
 		imshow("in", src);
 
 		/// Detect edges
 		Mat bwImage;
 		Mat threshold_output;
 		cv::cvtColor(src, bwImage, CV_RGB2GRAY);
-		threshold(bwImage, threshold_output, 150, 255, THRESH_BINARY);
+		cv::blur(bwImage, bwImage, Size(11, 11));
+		imshow("Blurred", bwImage);
+		cv::Canny(bwImage, bwImage, 10, 10 * 3, 3);
+		imshow("Canny", bwImage);
+		//cv::adaptiveThreshold(bwImage, threshold_output, 255.0, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY, 11, 2);
+		morphologyEx(bwImage, bwImage, MORPH_CLOSE, getStructuringElement(MORPH_ELLIPSE, Size(51,51)));
+		//morphologyEx(bwImage, bwImage, MORPH_OPEN, getStructuringElement(MORPH_ELLIPSE, Size(3, 3)));
+		imshow("Closing", bwImage);
+		threshold(bwImage, threshold_output, 100, 255, THRESH_BINARY);
 		imshow("bw", threshold_output);
 
 		/// Find contours
 		vector<vector<Point> > contours;
 		vector<Vec4i> hierarchy;					//TODO use hierarchy to remove unwanted objects
-		findContours(threshold_output, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0));
+		findContours(threshold_output, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
 
 		/// Approximate contours to polygons
 		vector<vector<Point> > contours_poly(contours.size());
@@ -215,20 +187,18 @@ int main(int argc, char** argv)
 
 		src.copyTo(img_box);
 		vector<Mat> vladDesc;
+		std::vector<std::pair<int, Mat>> perObjectDescriptors;
 		for (int i = 0; i < contours_poly.size(); i++)
 		{
 			double area = contourArea(contours_poly[i]);
-			if (area > 5000 && area < 300000)
+			if (area > 0)
 			{
 				// remove very small objects, and the very big ones (background)
-				//draw bounding box
 				boundRect[i] = boundingRect(Mat(contours_poly[i]));
-				rectangle(img_box, boundRect[i].tl(), boundRect[i].br(), Scalar(0, 255, 0), 2, 8, 0);
-				img_box.copyTo(img_feature);
-
+				img_box(boundRect[i]).copyTo(img_feature);
 				vector<KeyPoint> features;
 				Mat descriptors;
-				cv::Ptr<FeatureDetector> detector = cv::ORB::create();//(50, 1.2f, 8, 7, 0, 2, 0, 7);
+				cv::Ptr<FeatureDetector> detector = xfeatures2d::SIFT::create();
 				//cv::Ptr<FeatureDetector> detector = cv::cuda::ORB::create();
 
 				//create mask  
@@ -238,61 +208,105 @@ int main(int argc, char** argv)
 				detector->detect(src, features, mask);				//find features
 				detector->compute(src, features, descriptors);		//create feature description
 
-				drawKeypoints(img_feature, features, img_feature, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
-				cout << "desc type " << descriptors.type() << endl;
-				if (descriptors.rows >= VLAD_CENTERS)
+				if (descriptors.rows > 0)
 				{
-					assert(descriptors.cols == ORB_DESCRIPTOR_DIMENSION);
-					// allocate space for vlad encoding
-					float* vlad = new float[descriptors.cols * VLAD_CENTERS];
-					imshow("desc int", descriptors);
-					waitKey(10);
-					Mat descfloat;
-					descriptors.convertTo(descfloat, CV_32FC1);
-					imshow("desc float", descfloat);
-					waitKey(10);
-					vladEncoder.encode(vlad, descfloat);
-
-					Mat tmp(Size(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION), CV_32F, vlad);
-					vladDesc.push_back(tmp.clone());
-					for (int i = 0; i < VLAD_CENTERS; i++)
-					{
-						for (int j = 0; j < descriptors.cols; j++)
-						{
-							cout << 0 + descriptors.at<uint8_t>(i, j) << ",";
-						}
-						cout << endl;
-					}
-
-					cout << "----- float:" << endl;
-					for (int i = 0; i < VLAD_CENTERS; i++)
-					{
-						for (int j = 0; j < descriptors.cols; j++)
-						{
-							cout << descfloat.at<float>(i, j) << ",";
-						}
-						cout << endl;
-					}
-
-					cout << "----- vlad:" << endl;
-
-					for (int i = 0; i < VLAD_CENTERS; i++)
-					{
-						for (int j = 0; j < descriptors.cols; j++)
-						{
-							cout << vlad[i * descriptors.cols + j] << ",";
-						}
-						cout << endl;
-					}
-
-					cout << "-----" << endl;
-					delete[] vlad;
+					perObjectDescriptors.push_back(pair<int, Mat>(i, descriptors));
+					drawKeypoints(img_feature, features, img_feature, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
 				}
 				//TODO call learn here
 			}
 		}
 
-		if (vladDesc.size() == 2){
+		FlannBasedMatcher matcher;
+		std::vector< DMatch > matches;
+		
+		
+		Mat distances = Mat(perObjectDescriptors.size(), perObjectDescriptors.size(), CV_32F);
+		// calculate pair-wise distances
+		for (int idxOuter = 0; idxOuter < perObjectDescriptors.size(); idxOuter++)
+		{
+			Mat& outer = perObjectDescriptors.at(idxOuter).second;
+			for (int idxInner = 0; idxInner < perObjectDescriptors.size(); idxInner++)
+			{
+				if (idxInner > idxOuter){
+					Mat& inner = perObjectDescriptors.at(idxInner).second;
+					matcher.match(outer, inner, matches);
+
+					float avgDist = 0.0;
+					for (int i = 0; i < matches.size(); i++)
+					{
+						float dist = matches[i].distance;
+						avgDist += dist;
+					}
+					avgDist /= matches.size();
+					distances.at<float>(idxOuter, idxInner) = avgDist;
+				}
+				else
+				{
+					distances.at<float>(idxOuter, idxInner) = numeric_limits<float>::max();
+				}
+			}
+		}
+
+		const double distanceThreshold = 10; // TODO: experiment
+		std::vector<std::vector<int>> objectMatchings(perObjectDescriptors.size());
+		// for each object determines the index of the most similar different objects 
+		for (int rowIdx = 0; rowIdx < distances.rows; rowIdx++)
+		{
+			std::vector<int> currentObjectMatchings;
+			for (int colIdx = 0; colIdx < distances.cols; colIdx++)
+			{
+				if (distances.at<float>(rowIdx, colIdx) < distanceThreshold)
+				{
+					currentObjectMatchings.push_back(perObjectDescriptors.at(colIdx).first);
+				}
+			}
+			objectMatchings.push_back(currentObjectMatchings);
+		}
+
+		int clusterCount = 0;
+		std::unordered_map<int, std::unordered_set<int>> clusterToObjectMap;
+		std::unordered_map<int, int> objectToClusterMap;
+		for (int descriptorsIdx = 0; descriptorsIdx < distances.rows; descriptorsIdx++)
+		{
+			// check if this object has no cluster assigned so far
+			unordered_map<int, int>::iterator existingClusterIt = objectToClusterMap.find(descriptorsIdx);
+			if (existingClusterIt == objectToClusterMap.end())
+			{
+				// create new cluster
+				std::vector<int> currentObjectMatchings = objectMatchings.at(descriptorsIdx);
+				clusterToObjectMap.insert(std::pair<int, unordered_set<int>>(clusterCount, std::unordered_set<int>(currentObjectMatchings.begin(), currentObjectMatchings.end())));
+				objectToClusterMap.insert(std::pair<int, int>(perObjectDescriptors.at(descriptorsIdx).first, clusterCount++));
+			}
+			else
+			{
+				// populate existing clusters with similar objects of this map
+				std::vector<int> currentObjectMatchings = objectMatchings.at(descriptorsIdx);
+				int clusterIdx = existingClusterIt->second;
+				clusterToObjectMap.at(clusterIdx).insert(currentObjectMatchings.begin(), currentObjectMatchings.end());
+				objectToClusterMap.insert(std::pair<int, int>(perObjectDescriptors.at(descriptorsIdx).first, clusterIdx));
+			}
+		}
+
+		// draw clusters
+		for (std::unordered_map<int, int>::iterator it = objectToClusterMap.begin(); it != objectToClusterMap.end(); it++)
+		{
+			//draw bounding box
+			const Scalar* clusterColor;
+			if (it->second < numClusterColors)
+			{
+				clusterColor = clusterColors + it->second;
+			}
+			else
+			{
+				clusterColor = &defaultColor;
+			}
+			rectangle(img_box, boundRect[it->first].tl(), boundRect[it->first].br(), *clusterColor, 2, 8, 0);
+		}
+		
+
+
+		/*if (vladDesc.size() == 2){
 			cout << "norm: " << cv::norm(vladDesc[0], vladDesc[1], NORM_L2) << endl;
 			float overall = 0;
 			int mask = 0;
@@ -314,7 +328,7 @@ int main(int argc, char** argv)
 				mask |= 1 << best;
 			}
 			cout << "mydist: " << overall << endl;
-		}
+		}*/
 
 		if (img_feature.size().height > 0)
 		{
@@ -322,8 +336,8 @@ int main(int argc, char** argv)
 			imshow("Boxes", img_box);
 		}
 
-		waitKey(10);
-	}
+		waitKey();
+	//}
 
 	cudaDeviceReset();
 
