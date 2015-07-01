@@ -69,7 +69,7 @@ int main(int argc, char** argv)
 
 	cout << "Generating sample vectors" << endl;
 
-	const int sampleVectorCount = 50;
+	const int sampleVectorCount = 20;
 	SampleVectorsHolder* sampleVectorHolder;
 	sampleVectorGenerator.generateSampleVectorsFromCIFAR(&sampleVectorHolder, sampleVectorCount);
 
@@ -92,6 +92,28 @@ int main(int argc, char** argv)
 		Mat BM(Size(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION), CV_32F, (float*)sampleVectorHolder->getSampleVectors() + (i + 1)*VLAD_CENTERS*ORB_DESCRIPTOR_DIMENSION);
 		int classA = sampleVectorHolder->getSampleClasses()[i];
 		int classB = sampleVectorHolder->getSampleClasses()[i + 1];
+
+		FlannBasedMatcher matcher;
+		std::vector< DMatch > matches;
+		matcher.match(AM, BM, matches);
+
+		double max_dist = 0; 
+		double min_dist = 100, avg_dist = 0;
+
+		//-- Quick calculation of max and min distances between keypoints
+		for (int i = 0; i < AM.rows; i++)
+		{
+			double dist = matches[i].distance;
+			if (dist < min_dist) min_dist = dist;
+			if (dist > max_dist) max_dist = dist;
+			avg_dist += dist;
+		}
+		avg_dist /= AM.rows;
+
+		/*printf("-- Max dist : %f \n", max_dist);
+		printf("-- Min dist : %f \n", min_dist);
+		printf("-- Avg dist : %f \n", avg_dist);*/
+
 		/*cout << "A: " << endl;
 		for (int i = 0; i < VLAD_CENTERS; i++)
 		{
@@ -118,16 +140,17 @@ int main(int argc, char** argv)
 		float resultGPU = calcDistGPU2((float*)AM.data, (float*)BM.data);
 		float resultNORM = cv::norm(AM, BM, NORM_L2);
 		float haussDist = haussdorfDistance(AM, BM, NORM_L2);
+		float haussDistTest = haussdorfDistance(AM, AM, NORM_L2);
 		if (classA == classB){
-			sameAVG += haussDist;
+			sameAVG += avg_dist;
 			sameCNT++;
 		}
 		else{
-			diffAVG += haussDist;
+			diffAVG += avg_dist;
 			diffCNT++;
 		}
 
-		cout << "Classes: " << classA << ", " << classB << "GPU result: " << resultGPU << " L2Norm: " << resultNORM << " Hauss: " << haussDist << endl;
+		cout << "Classes: " << classA << ", " << classB << "GPU result: " << resultGPU << " L2Norm: " << resultNORM << " Hauss: " << haussDist << " CV Matching: " << avg_dist << endl;
 		//cout << "--------" << endl;
 
 		/*float overall = 0;

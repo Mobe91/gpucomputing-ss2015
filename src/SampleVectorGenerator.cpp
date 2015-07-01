@@ -3,6 +3,7 @@
 #include "Constants.h"
 #include "opencv2/highgui/highgui.hpp"
 #include <opencv2/features2d.hpp>
+#include <opencv2/xfeatures2d.hpp>
 #include "VLADEncoder.h"
 #include <iostream>
 
@@ -34,7 +35,10 @@ void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder**
 	int *sampleClass = new int[totalPictureCount];
 	int sampleVectorsCount = 0;
 	pair<Mat, int> imgPair;
-	cv::Ptr<FeatureDetector> detector = cv::ORB::create(50, 1.2f, 8, 7, 0, 2, 0, 7);
+	//cv::Ptr<FeatureDetector> detector = cv::ORB::create(3, 1.2f, 8, 7, 0, 2, 0, 7);
+
+	cv::Ptr<Feature2D> detector = xfeatures2d::SIFT::create();
+
 	vector<KeyPoint> features;
 	Mat descriptors, descriptors2;
 	VLADEncoder vladEncoder(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);

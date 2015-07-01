@@ -47,9 +47,9 @@ int SOM::initSOM(SampleVectorsHolder &vectorsHolder)
 			int sampleVectorIdx = rand() % sampleVectorCount;
 
 			memcpy(
-				h_somGrid + y * sampleVectorRows * sampleVectorCols * gridSize + x * sampleVectorCols * VLAD_CENTERS,
-				sampleVectors + sampleVectorIdx * sampleVectorCols * VLAD_CENTERS,
-				sampleVectorCols * VLAD_CENTERS * sizeof(float)
+				h_somGrid + y * sampleVectorRows * sampleVectorCols * gridSize + x * sampleVectorCols * sampleVectorRows,
+				sampleVectors + sampleVectorIdx * sampleVectorCols * sampleVectorRows,
+				sampleVectorCols * sampleVectorRows * sizeof(float)
 			);
 		}
 	}
