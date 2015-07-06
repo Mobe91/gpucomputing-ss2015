@@ -60,6 +60,31 @@ float haussdorfDistance(Mat &set1, Mat &set2, int distType)
 	return maxDistance;
 }
 
+template<typename T> void printMatrix(const Mat& a)
+{
+	for (int i = 0; i < a.rows; i++)
+	{
+		for (int j = 0; j < a.cols; j++)
+		{
+			cout << a.at<T>(i, j) << ",";
+		}
+		cout << endl;
+	}
+}
+
+void f_printMatrix(const Mat& a){
+	for (int i = 0; i < a.rows; i++)
+	{
+		for (int j = 0; j < a.cols; j++)
+		{
+			cout << a.at<float>(i, j) << ",";
+		}
+		cout << endl;
+	}
+}
+
+template<uint8_t> void printMatrix(Mat a);
+
 int main(int argc, char** argv)
 {
 	VideoCapture cap(0);
@@ -198,8 +223,8 @@ int main(int argc, char** argv)
 				img_box(boundRect[i]).copyTo(img_feature);
 				vector<KeyPoint> features;
 				Mat descriptors;
-				//cv::Ptr<FeatureDetector> detector = ORB::create();
-				cv::Ptr<FeatureDetector> detector = xfeatures2d::SIFT::create();
+				cv::Ptr<FeatureDetector> detector = ORB::create();
+				//cv::Ptr<FeatureDetector> detector = xfeatures2d::SIFT::create();
 				//cv::Ptr<FeatureDetector> detector = cv::cuda::ORB::create();
 
 				//create mask  
@@ -208,6 +233,9 @@ int main(int argc, char** argv)
 				roi = Scalar(255, 255, 255);
 				detector->detect(src, features, mask);				//find features
 				detector->compute(src, features, descriptors);		//create feature description
+
+				// convert descriptors matrix to float - only necessary if using ORB
+				descriptors.convertTo(descriptors, CV_32FC1);
 
 				if (descriptors.rows > 0)
 				{
