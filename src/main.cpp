@@ -21,8 +21,11 @@
 #include <opencv2\cudafilters.hpp>
 #include <opencv2\cudaarithm.hpp>
 #include <opencv2\cudaobjdetect.hpp>
+#include <opencv2\cudabgsegm.hpp>
 
-#define DEBUG 0
+#define DEBUG 1
+
+const bool illuminationCorrectionEnabled = true;
 
 using namespace cv;
 using namespace std;
@@ -95,7 +98,7 @@ template<uint8_t> void printMatrix(Mat a);
 
 int main(int argc, char** argv)
 {
-	VideoCapture cap(1);
+	VideoCapture cap(0);
 	cap.set(CV_CAP_PROP_FRAME_WIDTH, 1280);
 	cap.set(CV_CAP_PROP_FRAME_HEIGHT, 720);
 	Mat src;
@@ -182,16 +185,21 @@ int main(int argc, char** argv)
 	//VLADEncoder vladEncoder = VLADEncoder(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
 	
 	cv::cuda::GpuMat gpuSrc;
-	cv::cuda::GpuMat gpuGrayScaleImage, gpuProcessedImage;
+	cv::cuda::GpuMat gpuGrayScaleImage, gpuProcessedImage, gpuLabImage, gpuClaheResultImage, gpuForegroundImage;
+	vector<cuda::GpuMat> gpuLabPlanes(3);
 
 	cv::cuda::GpuMat keypoints_gpu, descriptors_gpu;
 	cv::cuda::GpuMat gpu_mask;
 	cv::cuda::GpuMat gpuMatches;
 
 	// image filters
-	cv::Ptr<cuda::Filter> gaussianFilter = cv::cuda::createGaussianFilter(CV_8U, CV_8U, Size(17, 17), -2.0);
-	cv::Ptr<cuda::CannyEdgeDetector> cudaCanny = cv::cuda::createCannyEdgeDetector(10, 10 * 3);
-	cv::Ptr<cuda::Filter> imgCloseFilter = cv::cuda::createMorphologyFilter(MORPH_DILATE, CV_8U, getStructuringElement(MORPH_ELLIPSE, Size(51, 51)));
+	cv::Ptr<cuda::Filter> gaussianFilter = cv::cuda::createGaussianFilter(CV_8U, CV_8U, Size(31, 31), -2.0);
+	cv::Ptr<cuda::CannyEdgeDetector> cudaCanny = cv::cuda::createCannyEdgeDetector(5, 45);
+	cv::Ptr<cuda::Filter> imgCloseFilter = cv::cuda::createMorphologyFilter(MORPH_CLOSE, CV_8U, getStructuringElement(MORPH_RECT, Size(51, 51)));
+	cv::Ptr<cv::cuda::CLAHE> clahe = cv::cuda::createCLAHE();
+	clahe->setClipLimit(4);
+
+	cv::Ptr<cuda::BackgroundSubtractorMOG2> gpuBackgroundSubstractor = cv::cuda::createBackgroundSubtractorMOG2();
 
 	// feature extractor
 	cv::Ptr<cv::cuda::ORB> detector = cv::cuda::ORB::create();
@@ -201,34 +209,62 @@ int main(int argc, char** argv)
 
 	// CUDA streams
 	cv::cuda::Stream stream;
-
-	/*while (cap.isOpened())
+	
+	while (cap.isOpened())
 	{
-		if (!cap.read(src))
+		/*if (!cap.read(src))
 			break;*/
-
 		gpuSrc.upload(src);
 
 		/// Detect edges
 		Mat bwImage, grayScaleImage, gpuHostImg;
 		Mat threshold_output;
-
 		
 #if DEBUG==1
-		// convert GPU image to grayscale
-		cv::cuda::cvtColor(gpuSrc, gpuGrayScaleImage, CV_BGR2GRAY, 0, stream);
+		// clahe illumination correction
+		if (illuminationCorrectionEnabled)
+		{
+			cv::cuda::cvtColor(gpuSrc, gpuLabImage, CV_BGR2Lab, 0, stream);
+			cuda::split(gpuLabImage, gpuLabPlanes, stream);
+			clahe->apply(gpuLabPlanes[0], gpuLabPlanes[0], stream);
+			cuda::merge(gpuLabPlanes, gpuLabImage, stream);
+			cv::cuda::cvtColor(gpuLabImage, gpuClaheResultImage, CV_Lab2BGR, 0, stream);
+			gpuClaheResultImage.download(gpuHostImg, stream);
+			stream.waitForCompletion();
+			imshow("Clahe GPU", gpuHostImg);
+
+			// convert GPU image to grayscale
+			cv::cuda::cvtColor(gpuClaheResultImage, gpuGrayScaleImage, CV_BGR2GRAY, 0, stream);
+			gpuGrayScaleImage.download(gpuHostImg, stream);
+			stream.waitForCompletion();
+			imshow("GPU grayscale", gpuHostImg);
+		}
+		else
+		{
+			// convert GPU image to grayscale
+			cv::cuda::cvtColor(gpuSrc, gpuGrayScaleImage, CV_BGR2GRAY, 0, stream);
+			gpuGrayScaleImage.download(gpuHostImg, stream);
+			stream.waitForCompletion();
+			imshow("GPU grayscale", gpuHostImg);
+
+			// convert CPU image to grayscale
+			/*cv::cvtColor(src, grayScaleImage, CV_RGB2GRAY);
+			cv::GaussianBlur(grayScaleImage, bwImage, Size(17, 17), -2.0);
+			imshow("Blurred", bwImage);*/
+		}
 		
+
+		/*gpuBackgroundSubstractor->apply(gpuClaheResultImage, gpuProcessedImage, -1.0, stream);
+		gpuProcessedImage.download(gpuHostImg, stream);
+		stream.waitForCompletion();
+		imshow("Background segmentation GPU", gpuHostImg);*/
+
 		// blur GPU image
 		gaussianFilter->apply(gpuGrayScaleImage, gpuProcessedImage, stream);
 		gpuProcessedImage.download(gpuHostImg, stream);
 		stream.waitForCompletion();
 		imshow("Blurred GPU", gpuHostImg);
 
-		// convert CPU image to grayscale
-		cv::cvtColor(src, grayScaleImage, CV_RGB2GRAY);
-		cv::GaussianBlur(grayScaleImage, bwImage, Size(17, 17), -2.0);
-		imshow("Blurred", bwImage);
-		
 		// GPU Canny edge detection
 		cudaCanny->detect(gpuProcessedImage, gpuProcessedImage, stream);
 		gpuProcessedImage.download(gpuHostImg, stream);
@@ -236,8 +272,8 @@ int main(int argc, char** argv)
 		imshow("Canny GPU", gpuHostImg);
 
 		// CPU Canny edge detection
-		cv::Canny(bwImage, bwImage, 10, 10 * 3);
-		imshow("Canny", bwImage);
+		/*cv::Canny(bwImage, bwImage, 10, 10 * 3);
+		imshow("Canny", bwImage);*/
 		
 		// GPU morphology
 		imgCloseFilter->apply(gpuProcessedImage, gpuProcessedImage, stream);
@@ -246,8 +282,8 @@ int main(int argc, char** argv)
 		imshow("GPU Closing", gpuHostImg);
 
 		// CPU morphology
-		morphologyEx(bwImage, bwImage, MORPH_DILATE, getStructuringElement(MORPH_ELLIPSE, Size(51, 51)));
-		imshow("CPU Closing", bwImage);
+		/*morphologyEx(bwImage, bwImage, MORPH_DILATE, getStructuringElement(MORPH_ELLIPSE, Size(51, 51)));
+		imshow("CPU Closing", bwImage);*/
 
 		// GPU threshold
 		/*cuda::threshold(gpuProcessedImage, gpuProcessedImage, 1000., 255.0, CV_8U, stream);
@@ -259,16 +295,32 @@ int main(int argc, char** argv)
 		threshold(bwImage, bwImage, 100, 255, THRESH_BINARY);
 		imshow("CPU Threshold", bwImage);*/
 #else
-		// convert GPU image to grayscale
-		cv::cuda::cvtColor(gpuSrc, gpuGrayScaleImage, CV_BGR2GRAY, 0, stream);
+		/*gpuBackgroundSubstractor->apply(gpuSrc, gpuProcessedImage, 0.1, stream);
+		gpuProcessedImage.download(gpuHostImg, stream);
+		stream.waitForCompletion();*/
+
+		if (illuminationCorrectionEnabled)
+		{
+			cv::cuda::cvtColor(gpuSrc, gpuLabImage, CV_BGR2Lab, 0, stream);
+			cuda::split(gpuLabImage, gpuLabPlanes, stream);
+			clahe->apply(gpuLabPlanes[0], gpuLabPlanes[0], stream);
+			cuda::merge(gpuLabPlanes, gpuLabImage, stream);
+			// convert GPU image to grayscale
+			cv::cuda::cvtColor(gpuLabImage, gpuClaheResultImage, CV_Lab2BGR, 0, stream);
+			cv::cuda::cvtColor(gpuClaheResultImage, gpuGrayScaleImage, CV_BGR2GRAY, 0, stream);
+		}
+		else
+		{
+			// convert GPU image to grayscale
+			cv::cuda::cvtColor(gpuSrc, gpuGrayScaleImage, CV_BGR2GRAY, 0, stream);
+		}
+		
 		gaussianFilter->apply(gpuGrayScaleImage, gpuProcessedImage, stream);
 		cudaCanny->detect(gpuProcessedImage, gpuProcessedImage, stream);
 		imgCloseFilter->apply(gpuProcessedImage, gpuProcessedImage, stream);
-		cuda::threshold(gpuProcessedImage, gpuProcessedImage, 1000., 255.0, CV_8U, stream);
 		gpuProcessedImage.download(gpuHostImg, stream);
 		stream.waitForCompletion();
 #endif
-		
 		imshow("Processed", gpuHostImg);
 		/// Find contours
 		vector<vector<Point> > contours;
@@ -282,13 +334,16 @@ int main(int argc, char** argv)
 		{
 			approxPolyDP(Mat(contours[i]), contours_poly[i], 60, true);		//reduce the contours
 		}
-
 		///vector<Mat> vladDesc;
 
 		vector<Rect> objectBoundRects(contours.size());
 		Rect tmpRect;
 		std::vector<std::pair<int, cv::cuda::GpuMat>> perObjectDescriptors;
 		Mat img_feature, test(src);
+
+		// TODO: write a kernel that clusters the descriptors according to the bounding rects
+		//detector->detectAndComputeAsync(gpuGrayScaleImage, gpuProcessedImage, keypoints_gpu, descriptors_gpu, false, stream);
+
 		int objectIdx = 0;
 		for (int i = 0; i < contours_poly.size(); i++)
 		{
@@ -296,6 +351,7 @@ int main(int argc, char** argv)
 			if (area > 0)
 			{
 				// remove very small objects, and the very big ones (background)
+				
 				tmpRect = boundingRect(Mat(contours_poly[i]));
 				src(tmpRect).copyTo(img_feature);
 
@@ -382,7 +438,7 @@ int main(int argc, char** argv)
 		std::vector<std::vector<int>> objectMatchings;
 		// for each object determines the index of the most similar different objects 
 
-#if DEBUG == 0
+#if DEBUG == 1
 		// print distance matrix
 		printMatrix<float>(distances);
 #endif
@@ -459,12 +515,9 @@ int main(int argc, char** argv)
 			rectangle(src, objectBoundRect.tl(), objectBoundRect.br(), *clusterColor, 2, 8, 0);
 		}
 
-		//HWND hWnd = (HWND)cvGetWindowHandle(OPENCV_WINDOW_NAME);
-		//::SendMessage(hWnd, WM_PAINT, 0, 0);
-		
 		imshow("Boxes", src);
 		waitKey(0);
-	//}
+	}
 
 		
 	cap.release();
