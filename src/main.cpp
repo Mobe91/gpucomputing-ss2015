@@ -16,6 +16,13 @@
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
+#include <opencv2\cudafeatures2d.hpp>
+#include <opencv2\cudaimgproc.hpp>
+#include <opencv2\cudafilters.hpp>
+#include <opencv2\cudaarithm.hpp>
+#include <opencv2\cudaobjdetect.hpp>
+
+#define DEBUG 0
 
 using namespace cv;
 using namespace std;
@@ -24,6 +31,7 @@ vector<vector<Mat>> som;
 
 void initSOM(int w, int h, int feature_cnt, int desc_length);
 void learnSOM(Mat descriptor);
+void matchConvert(cv::Mat gpu_matches, std::vector<DMatch>& matches);
 
 float haussdorfDistance(Mat &set1, Mat &set2, int distType)
 {
@@ -87,7 +95,7 @@ template<uint8_t> void printMatrix(Mat a);
 
 int main(int argc, char** argv)
 {
-	VideoCapture cap(0);
+	VideoCapture cap(1);
 	cap.set(CV_CAP_PROP_FRAME_WIDTH, 1280);
 	cap.set(CV_CAP_PROP_FRAME_HEIGHT, 720);
 	Mat src;
@@ -101,7 +109,7 @@ int main(int argc, char** argv)
 	};
 	const Scalar defaultColor = Scalar(255, 255, 255);
 
-	src = imread("vegetables.jpg");
+	src = imread("coins2.jpg");
 	cv::resize(src, src, Size(1024, 768));
 	/*vector<string> cifarPaths;
 	cifarPaths.push_back("cifar-10-batches-bin\\data_batch_1.bin");
@@ -172,103 +180,196 @@ int main(int argc, char** argv)
 
 	cout << sameCNT << " same, " << diffCNT << " different" << endl;*/
 	//VLADEncoder vladEncoder = VLADEncoder(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
-	//while (cap.isOpened())
-	//{
-		/*if (!cap.read(src))
+	
+	cv::cuda::GpuMat gpuSrc;
+	cv::cuda::GpuMat gpuGrayScaleImage, gpuProcessedImage;
+
+	cv::cuda::GpuMat keypoints_gpu, descriptors_gpu;
+	cv::cuda::GpuMat gpu_mask;
+	cv::cuda::GpuMat gpuMatches;
+
+	// image filters
+	cv::Ptr<cuda::Filter> gaussianFilter = cv::cuda::createGaussianFilter(CV_8U, CV_8U, Size(17, 17), -2.0);
+	cv::Ptr<cuda::CannyEdgeDetector> cudaCanny = cv::cuda::createCannyEdgeDetector(10, 10 * 3);
+	cv::Ptr<cuda::Filter> imgCloseFilter = cv::cuda::createMorphologyFilter(MORPH_DILATE, CV_8U, getStructuringElement(MORPH_ELLIPSE, Size(51, 51)));
+
+	// feature extractor
+	cv::Ptr<cv::cuda::ORB> detector = cv::cuda::ORB::create();
+
+	// feature matcher
+	cv::Ptr<cv::cuda::DescriptorMatcher> matcher = cv::cuda::DescriptorMatcher::createBFMatcher(NORM_HAMMING);
+
+	// CUDA streams
+	cv::cuda::Stream stream;
+
+	/*while (cap.isOpened())
+	{
+		if (!cap.read(src))
 			break;*/
 
-		imshow("in", src);
+		gpuSrc.upload(src);
 
 		/// Detect edges
-		Mat bwImage;
+		Mat bwImage, grayScaleImage, gpuHostImg;
 		Mat threshold_output;
-		cv::cvtColor(src, bwImage, CV_RGB2GRAY);
-		cv::blur(bwImage, bwImage, Size(11, 11));
-		//imshow("Blurred", bwImage);
-		cv::Canny(bwImage, bwImage, 10, 10 * 3, 3);
-		//imshow("Canny", bwImage);
-		//cv::adaptiveThreshold(bwImage, threshold_output, 255.0, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY, 11, 2);
-		morphologyEx(bwImage, bwImage, MORPH_CLOSE, getStructuringElement(MORPH_ELLIPSE, Size(51,51)));
-		//morphologyEx(bwImage, bwImage, MORPH_OPEN, getStructuringElement(MORPH_ELLIPSE, Size(3, 3)));
-		//imshow("Closing", bwImage);
-		threshold(bwImage, threshold_output, 100, 255, THRESH_BINARY);
-		//imshow("bw", threshold_output);
 
+		
+#if DEBUG==1
+		// convert GPU image to grayscale
+		cv::cuda::cvtColor(gpuSrc, gpuGrayScaleImage, CV_BGR2GRAY, 0, stream);
+		
+		// blur GPU image
+		gaussianFilter->apply(gpuGrayScaleImage, gpuProcessedImage, stream);
+		gpuProcessedImage.download(gpuHostImg, stream);
+		stream.waitForCompletion();
+		imshow("Blurred GPU", gpuHostImg);
+
+		// convert CPU image to grayscale
+		cv::cvtColor(src, grayScaleImage, CV_RGB2GRAY);
+		cv::GaussianBlur(grayScaleImage, bwImage, Size(17, 17), -2.0);
+		imshow("Blurred", bwImage);
+		
+		// GPU Canny edge detection
+		cudaCanny->detect(gpuProcessedImage, gpuProcessedImage, stream);
+		gpuProcessedImage.download(gpuHostImg, stream);
+		stream.waitForCompletion();
+		imshow("Canny GPU", gpuHostImg);
+
+		// CPU Canny edge detection
+		cv::Canny(bwImage, bwImage, 10, 10 * 3);
+		imshow("Canny", bwImage);
+		
+		// GPU morphology
+		imgCloseFilter->apply(gpuProcessedImage, gpuProcessedImage, stream);
+		gpuProcessedImage.download(gpuHostImg, stream);
+		stream.waitForCompletion();
+		imshow("GPU Closing", gpuHostImg);
+
+		// CPU morphology
+		morphologyEx(bwImage, bwImage, MORPH_DILATE, getStructuringElement(MORPH_ELLIPSE, Size(51, 51)));
+		imshow("CPU Closing", bwImage);
+
+		// GPU threshold
+		/*cuda::threshold(gpuProcessedImage, gpuProcessedImage, 1000., 255.0, CV_8U, stream);
+		gpuProcessedImage.download(gpuHostImg, stream);
+		stream.waitForCompletion();
+		imshow("GPU Threshold", gpuHostImg);
+
+		// CPU threshold
+		threshold(bwImage, bwImage, 100, 255, THRESH_BINARY);
+		imshow("CPU Threshold", bwImage);*/
+#else
+		// convert GPU image to grayscale
+		cv::cuda::cvtColor(gpuSrc, gpuGrayScaleImage, CV_BGR2GRAY, 0, stream);
+		gaussianFilter->apply(gpuGrayScaleImage, gpuProcessedImage, stream);
+		cudaCanny->detect(gpuProcessedImage, gpuProcessedImage, stream);
+		imgCloseFilter->apply(gpuProcessedImage, gpuProcessedImage, stream);
+		cuda::threshold(gpuProcessedImage, gpuProcessedImage, 1000., 255.0, CV_8U, stream);
+		gpuProcessedImage.download(gpuHostImg, stream);
+		stream.waitForCompletion();
+#endif
+		
+		imshow("Processed", gpuHostImg);
 		/// Find contours
 		vector<vector<Point> > contours;
 		vector<Vec4i> hierarchy;					//TODO use hierarchy to remove unwanted objects
-		findContours(threshold_output, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+		findContours(gpuHostImg, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
 
 		/// Approximate contours to polygons
 		vector<vector<Point> > contours_poly(contours.size());
-		vector<Rect> boundRect(contours.size());
-
+		
 		for (int i = 0; i < contours.size(); i++)
 		{
 			approxPolyDP(Mat(contours[i]), contours_poly[i], 60, true);		//reduce the contours
 		}
 
-		Mat img_feature, img_box;
+		///vector<Mat> vladDesc;
 
-		src.copyTo(img_box);
-		vector<Mat> vladDesc;
-		std::vector<std::pair<int, Mat>> perObjectDescriptors;
+		vector<Rect> objectBoundRects(contours.size());
+		Rect tmpRect;
+		std::vector<std::pair<int, cv::cuda::GpuMat>> perObjectDescriptors;
+		Mat img_feature, test(src);
+		int objectIdx = 0;
 		for (int i = 0; i < contours_poly.size(); i++)
 		{
 			double area = contourArea(contours_poly[i]);
 			if (area > 0)
 			{
 				// remove very small objects, and the very big ones (background)
-				boundRect[i] = boundingRect(Mat(contours_poly[i]));
-				img_box(boundRect[i]).copyTo(img_feature);
+				tmpRect = boundingRect(Mat(contours_poly[i]));
+				src(tmpRect).copyTo(img_feature);
+
 				vector<KeyPoint> features;
 				Mat descriptors;
-				cv::Ptr<FeatureDetector> detector = ORB::create();
-				//cv::Ptr<FeatureDetector> detector = xfeatures2d::SIFT::create();
-				//cv::Ptr<FeatureDetector> detector = cv::cuda::ORB::create();
 
 				//create mask  
 				Mat mask = Mat::zeros(src.size(), CV_8U);
-				Mat roi(mask, boundRect[i]);
+				
+				Mat roi(mask, tmpRect);
 				roi = Scalar(255, 255, 255);
-				detector->detect(src, features, mask);				//find features
-				detector->compute(src, features, descriptors);		//create feature description
+				//detector2->detect(src, features, mask);				//find features
+				//detector2->compute(src, features, descriptors);		//create feature description
+
+				gpu_mask.upload(mask, stream);
+				detector->detectAndComputeAsync(gpuGrayScaleImage, gpu_mask, keypoints_gpu, descriptors_gpu, false, stream);
+				
+				stream.waitForCompletion();
+				detector->convert(keypoints_gpu, features);
 
 				// convert descriptors matrix to float - only necessary if using ORB
-				descriptors.convertTo(descriptors, CV_32FC1);
+				//descriptors.convertTo(descriptors, CV_32FC1);
 
-				if (descriptors.rows > 0)
+				if (descriptors_gpu.rows > 0)
 				{
-					perObjectDescriptors.push_back(pair<int, Mat>(i, descriptors));
-					drawKeypoints(img_feature, features, img_feature, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
+					objectBoundRects[objectIdx] = tmpRect;
+					perObjectDescriptors.push_back(pair<int, cv::cuda::GpuMat>(objectIdx++, descriptors_gpu));
+					drawKeypoints(src, features, test, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
 				}
-				//TODO call learn here
 			}
 		}
 
-		FlannBasedMatcher matcher;
+		//FlannBasedMatcher matcher;
 		std::vector< DMatch > matches;
 		
-		
 		Mat distances = Mat(perObjectDescriptors.size(), perObjectDescriptors.size(), CV_32F);
+
 		// calculate pair-wise distances
 		for (int idxOuter = 0; idxOuter < perObjectDescriptors.size(); idxOuter++)
 		{
-			Mat& outer = perObjectDescriptors.at(idxOuter).second;
+			cv::cuda::GpuMat& outer = perObjectDescriptors.at(idxOuter).second;
 			for (int idxInner = 0; idxInner < perObjectDescriptors.size(); idxInner++)
 			{
 				if (idxInner > idxOuter){
-					Mat& inner = perObjectDescriptors.at(idxInner).second;
-					matcher.match(outer, inner, matches);
+					cv::cuda::GpuMat& inner = perObjectDescriptors.at(idxInner).second;
+
+					//Mat matches;
+					cv::cuda::Stream stream;
+					matcher->matchAsync(outer, inner, gpuMatches, noArray(), stream);
+					Mat hostMatches;
+					gpuMatches.download(hostMatches, stream);
+					
+					stream.waitForCompletion();
+					matchConvert(hostMatches, matches);
+
+					//matcher.match(outer, inner, matches);
 
 					float avgDist = 0.0;
+					float maxDist = numeric_limits<float>::min();
 					for (int i = 0; i < matches.size(); i++)
 					{
-						float dist = matches[i].distance;
+						float dist = matches.at(i).distance;
 						avgDist += dist;
+						if (dist > maxDist)
+						{
+							maxDist = dist;
+						}
 					}
 					avgDist /= matches.size();
-					distances.at<float>(idxOuter, idxInner) = avgDist;
+					distances.at<float>(idxOuter, idxInner) = avgDist / maxDist;
+				}
+				else if (idxInner < idxOuter)
+				{
+					distances.at<float>(idxOuter, idxInner) = distances.at<float>(idxInner, idxOuter);
 				}
 				else
 				{
@@ -277,9 +378,14 @@ int main(int argc, char** argv)
 			}
 		}
 
-		const double distanceThreshold = 10; // TODO: experiment
-		std::vector<std::vector<int>> objectMatchings(perObjectDescriptors.size());
+		const double distanceThreshold = 0.1; // TODO: experiment
+		std::vector<std::vector<int>> objectMatchings;
 		// for each object determines the index of the most similar different objects 
+
+#if DEBUG == 0
+		// print distance matrix
+		printMatrix<float>(distances);
+#endif
 		for (int rowIdx = 0; rowIdx < distances.rows; rowIdx++)
 		{
 			std::vector<int> currentObjectMatchings;
@@ -293,6 +399,17 @@ int main(int argc, char** argv)
 			objectMatchings.push_back(currentObjectMatchings);
 		}
 
+#if DEBUG == 1
+		// Output object similarities
+		for (int objectIdx = 0; objectIdx < objectMatchings.size(); objectIdx++)
+		{
+			for (int j = 0; j < objectMatchings.at(objectIdx).size(); j++)
+			{
+				cout << objectIdx << ": " << objectMatchings.at(objectIdx).at(j) << endl;
+			}
+		}
+#endif
+
 		int clusterCount = 0;
 		std::unordered_map<int, std::unordered_set<int>> clusterToObjectMap;
 		std::unordered_map<int, int> objectToClusterMap;
@@ -304,8 +421,15 @@ int main(int argc, char** argv)
 			{
 				// create new cluster
 				std::vector<int> currentObjectMatchings = objectMatchings.at(descriptorsIdx);
-				clusterToObjectMap.insert(std::pair<int, unordered_set<int>>(clusterCount, std::unordered_set<int>(currentObjectMatchings.begin(), currentObjectMatchings.end())));
-				objectToClusterMap.insert(std::pair<int, int>(perObjectDescriptors.at(descriptorsIdx).first, clusterCount++));
+				std::unordered_set<int> clusterObjects(currentObjectMatchings.begin(), currentObjectMatchings.end());
+				clusterObjects.insert(descriptorsIdx);
+				clusterToObjectMap.insert(std::pair<int, unordered_set<int>>(clusterCount, clusterObjects));
+
+				for (std::unordered_set<int>::iterator clusterObjectsIter = clusterObjects.begin(); clusterObjectsIter != clusterObjects.end(); clusterObjectsIter++)
+				{
+					objectToClusterMap.insert(std::pair<int, int>(*clusterObjectsIter, clusterCount));
+				}
+				clusterCount++;
 			}
 			else
 			{
@@ -313,6 +437,7 @@ int main(int argc, char** argv)
 				std::vector<int> currentObjectMatchings = objectMatchings.at(descriptorsIdx);
 				int clusterIdx = existingClusterIt->second;
 				clusterToObjectMap.at(clusterIdx).insert(currentObjectMatchings.begin(), currentObjectMatchings.end());
+				// no need to insert descriptorsIdx
 				objectToClusterMap.insert(std::pair<int, int>(perObjectDescriptors.at(descriptorsIdx).first, clusterIdx));
 			}
 		}
@@ -330,44 +455,19 @@ int main(int argc, char** argv)
 			{
 				clusterColor = &defaultColor;
 			}
-			rectangle(img_box, boundRect[it->first].tl(), boundRect[it->first].br(), *clusterColor, 2, 8, 0);
+			Rect& objectBoundRect = objectBoundRects[it->first];
+			rectangle(src, objectBoundRect.tl(), objectBoundRect.br(), *clusterColor, 2, 8, 0);
 		}
+
+		//HWND hWnd = (HWND)cvGetWindowHandle(OPENCV_WINDOW_NAME);
+		//::SendMessage(hWnd, WM_PAINT, 0, 0);
 		
-
-
-		/*if (vladDesc.size() == 2){
-			cout << "norm: " << cv::norm(vladDesc[0], vladDesc[1], NORM_L2) << endl;
-			float overall = 0;
-			int mask = 0;
-			for (int i = 0; i < VLAD_CENTERS; i++){
-				float bestdist = std::numeric_limits<float>::max();;
-				int best = 0;
-				for (int j = 0; j < VLAD_CENTERS; j++){
-					if ((mask & 1 << j) != 0)continue;
-					float dist = 0;
-					for (int k = 0; k < ORB_DESCRIPTOR_DIMENSION; k++){
-						dist += fabs(vladDesc[0].at<float>(k, i) - vladDesc[1].at<float>(k, j));
-					}
-					if (dist < bestdist){
-						bestdist = dist;
-						best = j;
-					}
-				}
-				overall += bestdist;
-				mask |= 1 << best;
-			}
-			cout << "mydist: " << overall << endl;
-		}*/
-
-		if (img_feature.size().height > 0)
-		{
-			imshow("Features", img_feature);
-			imshow("Boxes", img_box);
-		}
-
-		waitKey();
+		imshow("Boxes", src);
+		waitKey(0);
 	//}
 
+		
+	cap.release();
 	cudaDeviceReset();
 
 	return 0;
@@ -410,4 +510,50 @@ void learnSOM(Mat descriptor)
 	}
 
 	//TODO update neighborhood
+}
+
+void matchConvert(cv::Mat gpu_matches, std::vector<DMatch>& matches)
+{
+	if (gpu_matches.empty())
+	{
+		matches.clear();
+		return;
+	}
+
+	CV_Assert((gpu_matches.type() == CV_32SC1) && (gpu_matches.rows == 2 || gpu_matches.rows == 3));
+
+	const int nQuery = gpu_matches.cols;
+
+	matches.clear();
+	matches.reserve(nQuery);
+
+	const int* trainIdxPtr = NULL;
+	const int* imgIdxPtr = NULL;
+	const float* distancePtr = NULL;
+
+	if (gpu_matches.rows == 2)
+	{
+		trainIdxPtr = gpu_matches.ptr<int>(0);
+		distancePtr = gpu_matches.ptr<float>(1);
+	}
+	else
+	{
+		trainIdxPtr = gpu_matches.ptr<int>(0);
+		imgIdxPtr = gpu_matches.ptr<int>(1);
+		distancePtr = gpu_matches.ptr<float>(2);
+	}
+
+	for (int queryIdx = 0; queryIdx < nQuery; ++queryIdx)
+	{
+		const int trainIdx = trainIdxPtr[queryIdx];
+		if (trainIdx == -1)
+			continue;
+
+		const int imgIdx = imgIdxPtr ? imgIdxPtr[queryIdx] : 0;
+		const float distance = distancePtr[queryIdx];
+
+		DMatch m(queryIdx, trainIdx, imgIdx, distance);
+
+		matches.push_back(m);
+	}
 }
