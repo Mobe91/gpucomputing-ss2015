@@ -109,7 +109,7 @@ int main(int argc, char** argv)
 	};
 	const Scalar defaultColor = Scalar(255, 255, 255);
 
-	src = imread("coins2.jpg");
+	src = imread("vegetables.jpg");
 	cv::resize(src, src, Size(1024, 768));
 	/*vector<string> cifarPaths;
 	cifarPaths.push_back("cifar-10-batches-bin\\data_batch_1.bin");
