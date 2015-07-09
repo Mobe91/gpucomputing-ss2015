@@ -12,7 +12,6 @@
 #include "Constants.h"
 #include "SampleVectorGenerator.h"
 #include "CalcDist.cuh"
-#include <opencv2/xfeatures2d.hpp>
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
