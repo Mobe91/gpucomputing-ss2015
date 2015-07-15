@@ -1,4 +1,3 @@
-
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 #include <opencv/cv.h>
@@ -21,8 +20,10 @@
 #include <opencv2\cudaarithm.hpp>
 #include <opencv2\cudaobjdetect.hpp>
 #include <opencv2\cudabgsegm.hpp>
+#include <DescriptorClusterBuilder.cuh>
 
-#define DEBUG 1
+#define DEBUG 0
+#define DISPLAY_RUNTIME 1
 
 const bool illuminationCorrectionEnabled = true;
 
@@ -34,6 +35,7 @@ vector<vector<Mat>> som;
 void initSOM(int w, int h, int feature_cnt, int desc_length);
 void learnSOM(Mat descriptor);
 void matchConvert(cv::Mat gpu_matches, std::vector<DMatch>& matches);
+void putText(InputOutputArray img, Point p, ostringstream &s);
 
 float haussdorfDistance(Mat &set1, Mat &set2, int distType)
 {
@@ -97,9 +99,12 @@ template<uint8_t> void printMatrix(Mat a);
 
 int main(int argc, char** argv)
 {
+	const int viewportWidth = 1280;
+	const int viewportHeight = 720;
+
 	VideoCapture cap(0);
-	cap.set(CV_CAP_PROP_FRAME_WIDTH, 1280);
-	cap.set(CV_CAP_PROP_FRAME_HEIGHT, 720);
+	cap.set(CV_CAP_PROP_FRAME_WIDTH, viewportWidth);
+	cap.set(CV_CAP_PROP_FRAME_HEIGHT, viewportHeight);
 	Mat src;
 
 	// define cluster colors
@@ -113,83 +118,19 @@ int main(int argc, char** argv)
 
 	src = imread("vegetables.jpg");
 	cv::resize(src, src, Size(1024, 768));
-	/*vector<string> cifarPaths;
-	cifarPaths.push_back("cifar-10-batches-bin\\data_batch_1.bin");
-	SampleVectorGenerator sampleVectorGenerator(cifarPaths);
-
-	cout << "Generating sample vectors" << endl;
-
-	const int sampleVectorCount = 20;
-	SampleVectorsHolder* sampleVectorHolder;
-	sampleVectorGenerator.generateSampleVectorsFromCIFAR(&sampleVectorHolder, sampleVectorCount);
-
-	cout << "Generated " << sampleVectorHolder->getSampleVectorCount() << " sample vectors" << endl;
-
-	VLADEncoder vladEncoder = VLADEncoder(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
-	SOM som = SOM(SOM_GRID_SIZE);
-	int somInitResult;
-	if ((somInitResult = som.initSOM(*sampleVectorHolder)) != 0)
-	{
-		cerr << "SOM initialization failed" << endl;
-		return somInitResult;
-	}
-	float sameAVG = 0, diffAVG = 0;
-	int sameCNT = 0, diffCNT = 0;
-		
-	for (int i = 0; i < sampleVectorCount - 1; i++)
-	{
-		Mat AM(Size(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION), CV_32F, (float*)sampleVectorHolder->getSampleVectors() + i*VLAD_CENTERS*ORB_DESCRIPTOR_DIMENSION);
-		Mat BM(Size(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION), CV_32F, (float*)sampleVectorHolder->getSampleVectors() + (i + 1)*VLAD_CENTERS*ORB_DESCRIPTOR_DIMENSION);
-		int classA = sampleVectorHolder->getSampleClasses()[i];
-		int classB = sampleVectorHolder->getSampleClasses()[i + 1];
-
-		FlannBasedMatcher matcher;
-		std::vector< DMatch > matches;
-		matcher.match(AM, BM, matches);
-
-		double max_dist = 0; 
-		double min_dist = 100, avg_dist = 0;
-
-		//-- Quick calculation of max and min distances between keypoints
-		for (int i = 0; i < AM.rows; i++)
-		{
-			double dist = matches[i].distance;
-			if (dist < min_dist) min_dist = dist;
-			if (dist > max_dist) max_dist = dist;
-			avg_dist += dist;
-		}
-		avg_dist /= AM.rows;
-
-		float resultGPU = calcDistGPU2((float*)AM.data, (float*)BM.data);
-		float resultNORM = cv::norm(AM, BM, NORM_L2);
-		float haussDist = haussdorfDistance(AM, BM, NORM_L2);
-		float haussDistTest = haussdorfDistance(AM, AM, NORM_L2);
-		if (classA == classB){
-			sameAVG += avg_dist;
-			sameCNT++;
-		}
-		else{
-			diffAVG += avg_dist;
-			diffCNT++;
-		}
-
-		cout << "Classes: " << classA << ", " << classB << "GPU result: " << resultGPU << " L2Norm: " << resultNORM << " Hauss: " << haussDist << " CV Matching: " << avg_dist << endl;
-		//cout << "--------" << endl;	
-	}
-
-	cout << "Average difference for same classes: " << sameAVG / sameCNT << endl;
-	cout << "Average difference for different classes: " << diffAVG / diffCNT << endl;
-
-	cout << sameCNT << " same, " << diffCNT << " different" << endl;*/
-	//VLADEncoder vladEncoder = VLADEncoder(VLAD_CENTERS, ORB_DESCRIPTOR_DIMENSION);
 	
 	cv::cuda::GpuMat gpuSrc;
 	cv::cuda::GpuMat gpuGrayScaleImage, gpuProcessedImage, gpuLabImage, gpuClaheResultImage, gpuForegroundImage;
 	vector<cuda::GpuMat> gpuLabPlanes(3);
 
 	cv::cuda::GpuMat keypoints_gpu, descriptors_gpu;
+	cv::Mat descriptors_host;
 	cv::cuda::GpuMat gpu_mask;
 	cv::cuda::GpuMat gpuMatches;
+
+	cv::cuda::GpuMat gpuBoundingRects;
+	Mat hostBoundingRects(10, 4, CV_16U);
+	cv::cuda::GpuMat gpuClusters;
 
 	// image filters
 	cv::Ptr<cuda::Filter> gaussianFilter = cv::cuda::createGaussianFilter(CV_8U, CV_8U, Size(31, 31), -2.0);
@@ -211,8 +152,10 @@ int main(int argc, char** argv)
 	
 	while (cap.isOpened())
 	{
-		/*if (!cap.read(src))
-			break;*/
+		clock_t frameStart = clock();
+
+		//if (!cap.read(src))
+		//	break;
 		gpuSrc.upload(src);
 
 		/// Detect edges
@@ -298,6 +241,8 @@ int main(int argc, char** argv)
 		gpuProcessedImage.download(gpuHostImg, stream);
 		stream.waitForCompletion();*/
 
+		clock_t imgProcessingStart = clock();
+
 		if (illuminationCorrectionEnabled)
 		{
 			cv::cuda::cvtColor(gpuSrc, gpuLabImage, CV_BGR2Lab, 0, stream);
@@ -319,201 +264,292 @@ int main(int argc, char** argv)
 		imgCloseFilter->apply(gpuProcessedImage, gpuProcessedImage, stream);
 		gpuProcessedImage.download(gpuHostImg, stream);
 		stream.waitForCompletion();
+
+		clock_t imgProcessingEnd = clock();
 #endif
 		imshow("Processed", gpuHostImg);
-		/// Find contours
+		
+		clock_t objectDetectionStart = clock();
+		// Find contours
 		vector<vector<Point> > contours;
 		vector<Vec4i> hierarchy;					//TODO use hierarchy to remove unwanted objects
 		findContours(gpuHostImg, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
 
-		/// Approximate contours to polygons
+		// Approximate contours to polygons
 		vector<vector<Point> > contours_poly(contours.size());
 		
 		for (int i = 0; i < contours.size(); i++)
 		{
 			approxPolyDP(Mat(contours[i]), contours_poly[i], 60, true);		//reduce the contours
 		}
-		///vector<Mat> vladDesc;
+
+		hostBoundingRects.resize(contours_poly.size());
+
+		clock_t objectDetectionEnd = clock();
+
+		clock_t featureExtractionStart = clock();
 
 		vector<Rect> objectBoundRects(contours.size());
 		Rect tmpRect;
-		std::vector<std::pair<int, cv::cuda::GpuMat>> perObjectDescriptors;
-		Mat img_feature, test(src);
+		std::vector<std::pair<int, cv::Mat>> hostPerObjectDescriptors;
+		std::vector<std::pair<int, cv::cuda::GpuMat>> devicePerObjectDescriptors;
+		Mat img_feature;
 
-		// TODO: write a kernel that clusters the descriptors according to the bounding rects
-		//detector->detectAndComputeAsync(gpuGrayScaleImage, gpuProcessedImage, keypoints_gpu, descriptors_gpu, false, stream);
+		detector->detectAndComputeAsync(gpuGrayScaleImage, gpuProcessedImage, keypoints_gpu, descriptors_gpu, false, stream);
 
 		int objectIdx = 0;
 		for (int i = 0; i < contours_poly.size(); i++)
 		{
 			double area = contourArea(contours_poly[i]);
-			if (area > 0)
+			if (area > 2500)
 			{
 				// remove very small objects, and the very big ones (background)
-				
 				tmpRect = boundingRect(Mat(contours_poly[i]));
-				src(tmpRect).copyTo(img_feature);
-
-				vector<KeyPoint> features;
-				Mat descriptors;
-
-				//create mask  
-				Mat mask = Mat::zeros(src.size(), CV_8U);
 				
-				Mat roi(mask, tmpRect);
-				roi = Scalar(255, 255, 255);
-				//detector2->detect(src, features, mask);				//find features
-				//detector2->compute(src, features, descriptors);		//create feature description
+				hostBoundingRects.ptr<short>(objectIdx)[0] = tmpRect.tl().x;
+				hostBoundingRects.ptr<short>(objectIdx)[1] = tmpRect.tl().y;
+				hostBoundingRects.ptr<short>(objectIdx)[2] = tmpRect.br().x;
+				hostBoundingRects.ptr<short>(objectIdx)[3] = tmpRect.br().y;
 
-				gpu_mask.upload(mask, stream);
-				detector->detectAndComputeAsync(gpuGrayScaleImage, gpu_mask, keypoints_gpu, descriptors_gpu, false, stream);
-				
-				stream.waitForCompletion();
-				detector->convert(keypoints_gpu, features);
-
-				// convert descriptors matrix to float - only necessary if using ORB
-				//descriptors.convertTo(descriptors, CV_32FC1);
-
-				if (descriptors_gpu.rows > 0)
-				{
-					objectBoundRects[objectIdx] = tmpRect;
-					perObjectDescriptors.push_back(pair<int, cv::cuda::GpuMat>(objectIdx++, descriptors_gpu));
-					drawKeypoints(src, features, test, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
-				}
+				objectBoundRects[objectIdx++] = tmpRect;
 			}
 		}
 
-		//FlannBasedMatcher matcher;
-		std::vector< DMatch > matches;
-		
-		Mat distances = Mat(perObjectDescriptors.size(), perObjectDescriptors.size(), CV_32F);
+		clock_t featureExtractionEnd = clock();
 
-		// calculate pair-wise distances
-		for (int idxOuter = 0; idxOuter < perObjectDescriptors.size(); idxOuter++)
+		clock_t descriptorClusteringStart = 0;
+		clock_t descriptorClusteringEnd = 0;
+		clock_t matchingStart = 0;
+		clock_t matchingEnd = 0;
+		clock_t objectClusteringStart = 0;
+		clock_t objectClusteringEnd = 0;
+
+		// only perform clustering if at least on object was detected
+		if (objectIdx > 0)
 		{
-			cv::cuda::GpuMat& outer = perObjectDescriptors.at(idxOuter).second;
-			for (int idxInner = 0; idxInner < perObjectDescriptors.size(); idxInner++)
+			descriptorClusteringStart = clock();
+
+			Mat activeRects = hostBoundingRects.rowRange(cv::Range(0, objectIdx));
+			//printMatrix<short>(activeRects);
+			gpuBoundingRects.upload(activeRects, stream);
+
+			// get features to draw
+			vector<KeyPoint> features;
+			stream.waitForCompletion();
+			detector->convert(keypoints_gpu, features);
+			drawKeypoints(src, features, src, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
+
+			// create mats on host and device that will contain the clustered descriptors
+			for (int i = 0; i < objectIdx; i++)
 			{
-				if (idxInner > idxOuter){
-					cv::cuda::GpuMat& inner = perObjectDescriptors.at(idxInner).second;
+				hostPerObjectDescriptors.push_back(pair<int, cv::Mat>(i, Mat(descriptors_gpu.rows, descriptors_gpu.cols, descriptors_gpu.type())));
+				devicePerObjectDescriptors.push_back(pair<int, cv::cuda::GpuMat>(i, cv::cuda::GpuMat(descriptors_gpu.rows, descriptors_gpu.cols, descriptors_gpu.type())));
+			}
 
-					//Mat matches;
-					cv::cuda::Stream stream;
-					matcher->matchAsync(outer, inner, gpuMatches, noArray(), stream);
-					Mat hostMatches;
-					gpuMatches.download(hostMatches, stream);
-					
-					stream.waitForCompletion();
-					matchConvert(hostMatches, matches);
+			descriptors_gpu.download(descriptors_host, stream);
+			clusterORBDescriptors(gpuBoundingRects, keypoints_gpu, descriptors_host, gpuClusters, hostPerObjectDescriptors, stream);
+		
+			/*Mat hostClusters;
+			gpuClusters.download(hostClusters, stream);
+			stream.waitForCompletion();
+			printMatrix<short>(hostClusters);*/
 
-					//matcher.match(outer, inner, matches);
+			//FlannBasedMatcher matcher;
+			std::vector< DMatch > matches;
+		
+			// upload clustered descriptors to GPU
+			for (int objectIdx = 0; objectIdx < hostPerObjectDescriptors.size(); objectIdx++)
+			{
+				devicePerObjectDescriptors.at(objectIdx).second.upload(hostPerObjectDescriptors.at(objectIdx).second, stream);
+			}
 
-					float avgDist = 0.0;
-					float maxDist = numeric_limits<float>::min();
-					for (int i = 0; i < matches.size(); i++)
-					{
-						float dist = matches.at(i).distance;
-						avgDist += dist;
-						if (dist > maxDist)
-						{
-							maxDist = dist;
-						}
-					}
-					avgDist /= matches.size();
-					distances.at<float>(idxOuter, idxInner) = avgDist / maxDist;
-				}
-				else if (idxInner < idxOuter)
+			descriptorClusteringEnd = clock();
+			matchingStart = clock();
+
+			Mat distances = Mat(hostPerObjectDescriptors.size(), hostPerObjectDescriptors.size(), CV_32F);
+
+			// calculate pair-wise distances
+			for (int idxOuter = 0; idxOuter < hostPerObjectDescriptors.size(); idxOuter++)
+			{
+				cv::cuda::GpuMat& outer = devicePerObjectDescriptors.at(idxOuter).second;
+				for (int idxInner = 0; idxInner < hostPerObjectDescriptors.size(); idxInner++)
 				{
-					distances.at<float>(idxOuter, idxInner) = distances.at<float>(idxInner, idxOuter);
+					if (idxInner > idxOuter){
+						cv::cuda::GpuMat& inner = devicePerObjectDescriptors.at(idxInner).second;
+
+						//Mat matches;
+						matcher->matchAsync(outer, inner, gpuMatches, noArray(), stream);
+						Mat hostMatches;
+						gpuMatches.download(hostMatches, stream);
+					
+						stream.waitForCompletion();
+						matchConvert(hostMatches, matches);
+						
+						float avgDist = 0.0;
+						float maxDist = numeric_limits<float>::min();
+						for (int i = 0; i < matches.size(); i++)
+						{
+							float dist = matches.at(i).distance;
+							avgDist += dist;
+							if (dist > maxDist)
+							{
+								maxDist = dist;
+							}
+						}
+						avgDist /= matches.size();
+						distances.at<float>(idxOuter, idxInner) = avgDist / maxDist;
+					}
+					else if (idxInner < idxOuter)
+					{
+						distances.at<float>(idxOuter, idxInner) = distances.at<float>(idxInner, idxOuter);
+					}
+					else
+					{
+						distances.at<float>(idxOuter, idxInner) = numeric_limits<float>::max();
+					}
+				}
+			}
+
+			matchingEnd = clock();
+			objectClusteringStart = clock();
+
+			const double distanceThreshold = 0.13; // TODO: experiment
+			std::vector<std::vector<int>> objectMatchings;
+			// for each object determines the index of the most similar different objects 
+
+#if DEBUG == 1
+			// print distance matrix
+			printMatrix<float>(distances);
+#endif
+			for (int rowIdx = 0; rowIdx < distances.rows; rowIdx++)
+			{
+				std::vector<int> currentObjectMatchings;
+				for (int colIdx = 0; colIdx < distances.cols; colIdx++)
+				{
+					if (distances.at<float>(rowIdx, colIdx) < distanceThreshold)
+					{
+						currentObjectMatchings.push_back(hostPerObjectDescriptors.at(colIdx).first);
+					}
+				}
+				objectMatchings.push_back(currentObjectMatchings);
+			}
+
+	#if DEBUG == 1
+			// Output object similarities
+			for (int objectIdx = 0; objectIdx < objectMatchings.size(); objectIdx++)
+			{
+				for (int j = 0; j < objectMatchings.at(objectIdx).size(); j++)
+				{
+					cout << objectIdx << ": " << objectMatchings.at(objectIdx).at(j) << endl;
+				}
+			}
+	#endif
+
+			int clusterCount = 0;
+			std::unordered_map<int, std::unordered_set<int>> clusterToObjectMap;
+			std::unordered_map<int, int> objectToClusterMap;
+			for (int descriptorsIdx = 0; descriptorsIdx < distances.rows; descriptorsIdx++)
+			{
+				// check if this object has no cluster assigned so far
+				unordered_map<int, int>::iterator existingClusterIt = objectToClusterMap.find(descriptorsIdx);
+				if (existingClusterIt == objectToClusterMap.end())
+				{
+					// create new cluster
+					std::vector<int> currentObjectMatchings = objectMatchings.at(descriptorsIdx);
+					std::unordered_set<int> clusterObjects(currentObjectMatchings.begin(), currentObjectMatchings.end());
+					clusterObjects.insert(descriptorsIdx);
+					clusterToObjectMap.insert(std::pair<int, unordered_set<int>>(clusterCount, clusterObjects));
+
+					for (std::unordered_set<int>::iterator clusterObjectsIter = clusterObjects.begin(); clusterObjectsIter != clusterObjects.end(); clusterObjectsIter++)
+					{
+						objectToClusterMap.insert(std::pair<int, int>(*clusterObjectsIter, clusterCount));
+					}
+					clusterCount++;
 				}
 				else
 				{
-					distances.at<float>(idxOuter, idxInner) = numeric_limits<float>::max();
+					// populate existing clusters with similar objects of this map
+					std::vector<int> currentObjectMatchings = objectMatchings.at(descriptorsIdx);
+					int clusterIdx = existingClusterIt->second;
+					clusterToObjectMap.at(clusterIdx).insert(currentObjectMatchings.begin(), currentObjectMatchings.end());
+					// no need to insert descriptorsIdx
+					objectToClusterMap.insert(std::pair<int, int>(hostPerObjectDescriptors.at(descriptorsIdx).first, clusterIdx));
 				}
 			}
-		}
 
-		const double distanceThreshold = 0.1; // TODO: experiment
-		std::vector<std::vector<int>> objectMatchings;
-		// for each object determines the index of the most similar different objects 
-
-#if DEBUG == 1
-		// print distance matrix
-		printMatrix<float>(distances);
-#endif
-		for (int rowIdx = 0; rowIdx < distances.rows; rowIdx++)
-		{
-			std::vector<int> currentObjectMatchings;
-			for (int colIdx = 0; colIdx < distances.cols; colIdx++)
+			// draw clusters
+			for (std::unordered_map<int, int>::iterator it = objectToClusterMap.begin(); it != objectToClusterMap.end(); it++)
 			{
-				if (distances.at<float>(rowIdx, colIdx) < distanceThreshold)
+				//draw bounding box
+				const Scalar* clusterColor;
+				if (it->second < numClusterColors)
 				{
-					currentObjectMatchings.push_back(perObjectDescriptors.at(colIdx).first);
+					clusterColor = clusterColors + it->second;
 				}
-			}
-			objectMatchings.push_back(currentObjectMatchings);
-		}
-
-#if DEBUG == 1
-		// Output object similarities
-		for (int objectIdx = 0; objectIdx < objectMatchings.size(); objectIdx++)
-		{
-			for (int j = 0; j < objectMatchings.at(objectIdx).size(); j++)
-			{
-				cout << objectIdx << ": " << objectMatchings.at(objectIdx).at(j) << endl;
-			}
-		}
-#endif
-
-		int clusterCount = 0;
-		std::unordered_map<int, std::unordered_set<int>> clusterToObjectMap;
-		std::unordered_map<int, int> objectToClusterMap;
-		for (int descriptorsIdx = 0; descriptorsIdx < distances.rows; descriptorsIdx++)
-		{
-			// check if this object has no cluster assigned so far
-			unordered_map<int, int>::iterator existingClusterIt = objectToClusterMap.find(descriptorsIdx);
-			if (existingClusterIt == objectToClusterMap.end())
-			{
-				// create new cluster
-				std::vector<int> currentObjectMatchings = objectMatchings.at(descriptorsIdx);
-				std::unordered_set<int> clusterObjects(currentObjectMatchings.begin(), currentObjectMatchings.end());
-				clusterObjects.insert(descriptorsIdx);
-				clusterToObjectMap.insert(std::pair<int, unordered_set<int>>(clusterCount, clusterObjects));
-
-				for (std::unordered_set<int>::iterator clusterObjectsIter = clusterObjects.begin(); clusterObjectsIter != clusterObjects.end(); clusterObjectsIter++)
+				else
 				{
-					objectToClusterMap.insert(std::pair<int, int>(*clusterObjectsIter, clusterCount));
+					clusterColor = &defaultColor;
 				}
-				clusterCount++;
+				Rect& objectBoundRect = objectBoundRects[it->first];
+				rectangle(src, objectBoundRect.tl(), objectBoundRect.br(), *clusterColor, 2, 8, 0);
 			}
-			else
-			{
-				// populate existing clusters with similar objects of this map
-				std::vector<int> currentObjectMatchings = objectMatchings.at(descriptorsIdx);
-				int clusterIdx = existingClusterIt->second;
-				clusterToObjectMap.at(clusterIdx).insert(currentObjectMatchings.begin(), currentObjectMatchings.end());
-				// no need to insert descriptorsIdx
-				objectToClusterMap.insert(std::pair<int, int>(perObjectDescriptors.at(descriptorsIdx).first, clusterIdx));
-			}
+
+			objectClusteringEnd = clock();
+
 		}
 
-		// draw clusters
-		for (std::unordered_map<int, int>::iterator it = objectToClusterMap.begin(); it != objectToClusterMap.end(); it++)
-		{
-			//draw bounding box
-			const Scalar* clusterColor;
-			if (it->second < numClusterColors)
-			{
-				clusterColor = clusterColors + it->second;
-			}
-			else
-			{
-				clusterColor = &defaultColor;
-			}
-			Rect& objectBoundRect = objectBoundRects[it->first];
-			rectangle(src, objectBoundRect.tl(), objectBoundRect.br(), *clusterColor, 2, 8, 0);
-		}
+		clock_t frameEnd = clock();
 
+#if DISPLAY_RUNTIME == 1
+		
+		double imgProcessingTime_ms = (double(imgProcessingEnd - imgProcessingStart) / CLOCKS_PER_SEC) * 1000.0;
+		double objectDetectionTime_ms = (double(objectDetectionEnd - objectDetectionStart) / CLOCKS_PER_SEC) * 1000.0;
+		double featureExtractionTime_ms = (double(featureExtractionEnd - featureExtractionStart) / CLOCKS_PER_SEC) * 1000.0;
+		double descriptorClusteringTime_ms = (double(descriptorClusteringEnd - descriptorClusteringStart) / CLOCKS_PER_SEC) * 1000.0;
+		double matchingTime_ms = (double(matchingEnd - matchingStart) / CLOCKS_PER_SEC) * 1000.0;
+		double objectClusteringTime_ms = (double(objectClusteringEnd - objectClusteringStart) / CLOCKS_PER_SEC) * 1000.0;
+
+
+		double frameTime_ms = (double(frameEnd- frameStart) / CLOCKS_PER_SEC) * 1000.0;
+
+		ostringstream stringStream;
+		stringStream << "Img processing time: " << imgProcessingTime_ms << " ms";
+		putText(src, Point(viewportWidth - 600, viewportHeight - 200), stringStream);
+		stringStream.str("");
+		stringStream.clear();
+
+		stringStream << "Object detection time: " << objectDetectionTime_ms << " ms";
+		putText(src, Point(viewportWidth - 600, viewportHeight - 180), stringStream);
+		stringStream.str("");
+		stringStream.clear();
+
+		stringStream << "Feature extraction time: " << featureExtractionTime_ms << " ms";
+		putText(src, Point(viewportWidth - 600, viewportHeight - 160), stringStream);
+		stringStream.str("");
+		stringStream.clear();
+
+		stringStream << "Descriptor clustering time: " << descriptorClusteringTime_ms << " ms";
+		putText(src, Point(viewportWidth - 600, viewportHeight - 140), stringStream);
+		stringStream.str("");
+		stringStream.clear();
+
+		stringStream << "Matching time: " << matchingTime_ms << " ms";
+		putText(src, Point(viewportWidth - 600, viewportHeight - 120), stringStream);
+		stringStream.str("");
+		stringStream.clear();
+
+		stringStream << "Object clustering time: " << objectClusteringTime_ms << " ms";
+		putText(src, Point(viewportWidth - 600, viewportHeight - 100), stringStream);
+		stringStream.str("");
+		stringStream.clear();
+
+		stringStream << "Frame time: " << frameTime_ms << " ms";
+		putText(src, Point(viewportWidth - 600, viewportHeight - 80), stringStream);
+		stringStream.str("");
+		stringStream.clear();
+		
+#endif
+		
 		imshow("Boxes", src);
 		waitKey(0);
 	}
@@ -525,6 +561,10 @@ int main(int argc, char** argv)
 	return 0;
 }
 
+void putText(InputOutputArray img, Point p, ostringstream &s)
+{
+	putText(img, s.str(), p, FONT_HERSHEY_COMPLEX_SMALL, 0.6, cvScalar(250, 250, 250));
+}
 void initSOM(int w, int h, int feature_cnt, int desc_length){
 	som.resize(w);
 
