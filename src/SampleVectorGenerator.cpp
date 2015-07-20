@@ -3,7 +3,7 @@
 #include "Constants.h"
 #include "opencv2/highgui/highgui.hpp"
 #include <opencv2/features2d.hpp>
-#include <opencv2/xfeatures2d.hpp>
+//#include <opencv2/xfeatures2d.hpp>
 #include "VLADEncoder.h"
 #include <iostream>
 
@@ -41,7 +41,7 @@ void SampleVectorGenerator::generateSampleVectorsFromCIFAR(SampleVectorsHolder**
 	int sampleVectorsCount = 0;
 	pair<Mat, int> imgPair;
 
-	cv::Ptr<Feature2D> detector = xfeatures2d::SIFT::create();
+	cv::Ptr<Feature2D> detector = cv::ORB::create();// xfeatures2d::SIFT::create();
 
 	vector<KeyPoint> features;
 	Mat descriptors, descriptors2;

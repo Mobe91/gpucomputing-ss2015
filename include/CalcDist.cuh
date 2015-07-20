@@ -4,5 +4,4 @@
 // NOT USED
 ///////////////////////////////////////////
 
-__host__ float calcDistGPU(float *som, float *BM);
-__host__ float calcDistGPU2(float *inputA, float *inputB);
+__host__ float* calcDistGPU(float *input, int image_cnt);
