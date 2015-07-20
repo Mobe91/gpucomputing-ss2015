@@ -4,13 +4,13 @@
 #include <opencv/highgui.h>
 #include <iostream>
 #include <opencv2/features2d.hpp>
-#include <VLADEncoder.h>
-#include <CIFARImageLoader.h>
-#include <SOM.h>
+//#include <VLADEncoder.h>
+//#include <CIFARImageLoader.h>
+//#include <SOM.h>
 #include <cuda_runtime.h>
-#include "Constants.h"
-#include "SampleVectorGenerator.h"
-#include "CalcDist.cuh"
+//#include "Constants.h"
+//#include "SampleVectorGenerator.h"
+//#include "CalcDist.cuh"
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
@@ -21,6 +21,8 @@
 #include <opencv2\cudaobjdetect.hpp>
 #include <opencv2\cudabgsegm.hpp>
 #include <DescriptorClusterBuilder.cuh>
+#include <time.h>
+#include <stdint.h>
 
 #define DEBUG 0
 #define DISPLAY_RUNTIME 1
@@ -32,8 +34,8 @@ using namespace std;
 
 vector<vector<Mat>> som;
 
-void initSOM(int w, int h, int feature_cnt, int desc_length);
-void learnSOM(Mat descriptor);
+//void initSOM(int w, int h, int feature_cnt, int desc_length);
+//void learnSOM(Mat descriptor);
 void matchConvert(cv::Mat gpu_matches, std::vector<DMatch>& matches);
 void putText(InputOutputArray img, Point p, ostringstream &s);
 
@@ -161,7 +163,8 @@ int main(int argc, char** argv)
 		/// Detect edges
 		Mat bwImage, grayScaleImage, gpuHostImg;
 		Mat threshold_output;
-		
+
+		clock_t imgProcessingStart = clock();
 #if DEBUG==1
 		// clahe illumination correction
 		if (illuminationCorrectionEnabled)
@@ -188,18 +191,7 @@ int main(int argc, char** argv)
 			gpuGrayScaleImage.download(gpuHostImg, stream);
 			stream.waitForCompletion();
 			imshow("GPU grayscale", gpuHostImg);
-
-			// convert CPU image to grayscale
-			/*cv::cvtColor(src, grayScaleImage, CV_RGB2GRAY);
-			cv::GaussianBlur(grayScaleImage, bwImage, Size(17, 17), -2.0);
-			imshow("Blurred", bwImage);*/
 		}
-		
-
-		/*gpuBackgroundSubstractor->apply(gpuClaheResultImage, gpuProcessedImage, -1.0, stream);
-		gpuProcessedImage.download(gpuHostImg, stream);
-		stream.waitForCompletion();
-		imshow("Background segmentation GPU", gpuHostImg);*/
 
 		// blur GPU image
 		gaussianFilter->apply(gpuGrayScaleImage, gpuProcessedImage, stream);
@@ -212,37 +204,13 @@ int main(int argc, char** argv)
 		gpuProcessedImage.download(gpuHostImg, stream);
 		stream.waitForCompletion();
 		imshow("Canny GPU", gpuHostImg);
-
-		// CPU Canny edge detection
-		/*cv::Canny(bwImage, bwImage, 10, 10 * 3);
-		imshow("Canny", bwImage);*/
 		
 		// GPU morphology
 		imgCloseFilter->apply(gpuProcessedImage, gpuProcessedImage, stream);
 		gpuProcessedImage.download(gpuHostImg, stream);
 		stream.waitForCompletion();
 		imshow("GPU Closing", gpuHostImg);
-
-		// CPU morphology
-		/*morphologyEx(bwImage, bwImage, MORPH_DILATE, getStructuringElement(MORPH_ELLIPSE, Size(51, 51)));
-		imshow("CPU Closing", bwImage);*/
-
-		// GPU threshold
-		/*cuda::threshold(gpuProcessedImage, gpuProcessedImage, 1000., 255.0, CV_8U, stream);
-		gpuProcessedImage.download(gpuHostImg, stream);
-		stream.waitForCompletion();
-		imshow("GPU Threshold", gpuHostImg);
-
-		// CPU threshold
-		threshold(bwImage, bwImage, 100, 255, THRESH_BINARY);
-		imshow("CPU Threshold", bwImage);*/
 #else
-		/*gpuBackgroundSubstractor->apply(gpuSrc, gpuProcessedImage, 0.1, stream);
-		gpuProcessedImage.download(gpuHostImg, stream);
-		stream.waitForCompletion();*/
-
-		clock_t imgProcessingStart = clock();
-
 		if (illuminationCorrectionEnabled)
 		{
 			cv::cuda::cvtColor(gpuSrc, gpuLabImage, CV_BGR2Lab, 0, stream);
@@ -264,15 +232,15 @@ int main(int argc, char** argv)
 		imgCloseFilter->apply(gpuProcessedImage, gpuProcessedImage, stream);
 		gpuProcessedImage.download(gpuHostImg, stream);
 		stream.waitForCompletion();
-
-		clock_t imgProcessingEnd = clock();
+		
 #endif
+		clock_t imgProcessingEnd = clock();
 		imshow("Processed", gpuHostImg);
 		
 		clock_t objectDetectionStart = clock();
 		// Find contours
 		vector<vector<Point> > contours;
-		vector<Vec4i> hierarchy;					//TODO use hierarchy to remove unwanted objects
+		vector<Vec4i> hierarchy;
 		findContours(gpuHostImg, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
 
 		// Approximate contours to polygons
@@ -324,13 +292,13 @@ int main(int argc, char** argv)
 		clock_t objectClusteringStart = 0;
 		clock_t objectClusteringEnd = 0;
 
-		// only perform clustering if at least on object was detected
+		// only perform clustering if at least one object was detected
 		if (objectIdx > 0)
 		{
 			descriptorClusteringStart = clock();
 
+			// get the object bounding rectangles (hostBoundingRects was allocated with a pessimistic size)
 			Mat activeRects = hostBoundingRects.rowRange(cv::Range(0, objectIdx));
-			//printMatrix<short>(activeRects);
 			gpuBoundingRects.upload(activeRects, stream);
 
 			// get features to draw
@@ -347,12 +315,8 @@ int main(int argc, char** argv)
 			}
 
 			descriptors_gpu.download(descriptors_host, stream);
+			// invoke custom kernel for descriptor clustering
 			clusterORBDescriptors(gpuBoundingRects, keypoints_gpu, descriptors_host, gpuClusters, hostPerObjectDescriptors, stream);
-		
-			/*Mat hostClusters;
-			gpuClusters.download(hostClusters, stream);
-			stream.waitForCompletion();
-			printMatrix<short>(hostClusters);*/
 
 			//FlannBasedMatcher matcher;
 			std::vector< DMatch > matches;
@@ -434,7 +398,7 @@ int main(int argc, char** argv)
 				objectMatchings.push_back(currentObjectMatchings);
 			}
 
-	#if DEBUG == 1
+#if DEBUG == 1
 			// Output object similarities
 			for (int objectIdx = 0; objectIdx < objectMatchings.size(); objectIdx++)
 			{
@@ -443,7 +407,7 @@ int main(int argc, char** argv)
 					cout << objectIdx << ": " << objectMatchings.at(objectIdx).at(j) << endl;
 				}
 			}
-	#endif
+#endif
 
 			int clusterCount = 0;
 			std::unordered_map<int, std::unordered_set<int>> clusterToObjectMap;
@@ -501,7 +465,7 @@ int main(int argc, char** argv)
 		clock_t frameEnd = clock();
 
 #if DISPLAY_RUNTIME == 1
-		
+		// render runtime measurements		
 		double imgProcessingTime_ms = (double(imgProcessingEnd - imgProcessingStart) / CLOCKS_PER_SEC) * 1000.0;
 		double objectDetectionTime_ms = (double(objectDetectionEnd - objectDetectionStart) / CLOCKS_PER_SEC) * 1000.0;
 		double featureExtractionTime_ms = (double(featureExtractionEnd - featureExtractionStart) / CLOCKS_PER_SEC) * 1000.0;
@@ -565,44 +529,6 @@ void putText(InputOutputArray img, Point p, ostringstream &s)
 {
 	putText(img, s.str(), p, FONT_HERSHEY_COMPLEX_SMALL, 0.6, cvScalar(250, 250, 250));
 }
-void initSOM(int w, int h, int feature_cnt, int desc_length){
-	som.resize(w);
-
-	//fill the map with random values
-	for (int i = 0; i < w; i++)
-	{
-		som[i].resize(h);
-
-		for (int j = 0; j < h; j++)
-		{
-			Mat m = Mat(desc_length, feature_cnt, CV_8U); // TODO check orientation
-			randu(m, Scalar::all(0), Scalar::all(255));
-
-			som[i][j] = m;
-		}
-	}
-}
-
-void learnSOM(Mat descriptor)
-{
-	Point2i best;
-	int best_distance = INT_MAX;
-	for (int i = 0; i < som.size(); i++)
-	{
-		for (int j = 0; j < som[i].size(); j++)
-		{
-			int distance = 0;						//TODO define metric !
-			if (distance < best_distance)
-			{
-				best_distance = distance;
-				best.x = i;
-				best.y = j;
-			}
-		}
-	}
-
-	//TODO update neighborhood
-}
 
 void matchConvert(cv::Mat gpu_matches, std::vector<DMatch>& matches)
 {
@@ -649,3 +575,40 @@ void matchConvert(cv::Mat gpu_matches, std::vector<DMatch>& matches)
 		matches.push_back(m);
 	}
 }
+
+/*void initSOM(int w, int h, int feature_cnt, int desc_length){
+	som.resize(w);
+
+	//fill the map with random values
+	for (int i = 0; i < w; i++)
+	{
+		som[i].resize(h);
+
+		for (int j = 0; j < h; j++)
+		{
+			Mat m = Mat(desc_length, feature_cnt, CV_8U); // TODO check orientation
+			randu(m, Scalar::all(0), Scalar::all(255));
+
+			som[i][j] = m;
+		}
+	}
+}
+
+void learnSOM(Mat descriptor)
+{
+	Point2i best;
+	int best_distance = INT_MAX;
+	for (int i = 0; i < som.size(); i++)
+	{
+		for (int j = 0; j < som[i].size(); j++)
+		{
+			int distance = 0;
+			if (distance < best_distance)
+			{
+				best_distance = distance;
+				best.x = i;
+				best.y = j;
+			}
+		}
+	}
+}*/	

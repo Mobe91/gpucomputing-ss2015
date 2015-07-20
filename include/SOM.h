@@ -5,6 +5,10 @@
 #include "CIFARImageLoader.h"
 #include "SampleVectorsHolder.h"
 
+///////////////////////////////////////////
+// NOT USED
+///////////////////////////////////////////
+
 #pragma once
 
 using namespace std;

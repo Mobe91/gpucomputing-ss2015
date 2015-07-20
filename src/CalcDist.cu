@@ -8,6 +8,9 @@
 #include <device_functions.h>
 #include "CalcDist.cuh"
 
+///////////////////////////////////////////
+// NOT USED
+///////////////////////////////////////////
 
 __global__ void calcDist(float *map, float *input, float *result){
 	int tid = threadIdx.x;

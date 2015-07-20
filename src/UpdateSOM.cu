@@ -3,12 +3,15 @@
 #include <helper_functions.h>
 #include <cuda.h>
 #include <device_functions.h>
-
 #include "UpdateSOM.cuh"
 #include "Constants.h"
 #include <iostream>
 #include "SOM.h"
 #include <math.h> 
+
+///////////////////////////////////////////
+// NOT USED
+///////////////////////////////////////////
 
 __global__ void updateSOMKernel(float *d_somGrid, float *input, int indexOfBMU, float neighborhoodRadius, float currentLearningRate){
 

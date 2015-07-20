@@ -2,6 +2,10 @@
 #include "SampleVectorsHolder.h"
 #include "CIFARImageLoader.h"
 
+///////////////////////////////////////////
+// NOT USED
+///////////////////////////////////////////
+
 using namespace std;
 
 #pragma once

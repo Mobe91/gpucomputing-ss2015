@@ -1,5 +1,9 @@
 #include "SampleVectorsHolder.h"
 
+///////////////////////////////////////////
+// NOT USED
+///////////////////////////////////////////
+
 SampleVectorsHolder::~SampleVectorsHolder()
 {
 	delete[] sampleVectors;
